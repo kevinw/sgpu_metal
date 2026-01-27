@@ -1,0 +1,6 @@
+[
+  {
+    "label": "Generate Metal Bindings",
+    "command": "cd modules/Metal && rm -f module.jai && jai -quiet generate.jai +Autorun && jai module.jai",
+  },
+]
