@@ -15,71 +15,34 @@ build :: () -> bool {
     print("Generating Metal bindings...\n");
 
     frameworks_path := sprint("%/System/Library/Frameworks", get_macos_sdk_path());
-    cf_path         := sprint("%/CoreFoundation.framework/Headers", frameworks_path);
-    metal_path      := tprint("%/Metal.framework/Headers", frameworks_path);
 
-    print("METAL is at %\n\n", metal_path);
-
-    all_metal_files := string.[
-        "MTLTypes.h",
-        "MTLBuffer.h",
-        "MTLResource.h",
-        "MTLTexture.h",
-        "MTLResourceViewPool.h",
-        "MTLResourceStateCommandEncoder.h",
-        "MTLComputeCommandEncoder.h",
-        "MTLHeap.h",
-        "MTLArgumentEncoder.h",
-        "MTLCommandBuffer.h",
-        "MTLDevice.h",
-        "MTLIOCommandBuffer.h",
-        "MTLIOCommandQueue.h",
-        "MTLLogState.h",
-        "MTLLibrary.h",
-        "MTLComputePipeline.h",
-        "MTLBinaryArchive.h",
-        "MTLComputePass.h",
-        "MTLDrawable.h",
-        "MTLDynamicLibrary.h",
-        "MTLRasterizationRate.h",
-        "MTLParallelRenderCommandEncoder.h",
-        "MTLRenderCommandEncoder.h",
-        "MTLTextureViewPool.h",
-        "MTLEvent.h",
-        "MTLSampler.h",
-        "MTLFunctionLog.h",
-        "MTLRenderPipeline.h",
-        "MTLIntersectionFunctionTable.h",
-        "MTLResidencySet.h",
-        "MTLFunctionStitching.h",
-        "MTLVertexDescriptor.h",
-        "MTLVisibleFunctionTable.h",
-        "MTL4StitchedFunctionDescriptor.h",
-        "MTL4RenderPass.h",
-    ];
-
-    simple_metal_files := string.[
-        "MTLTypes.h",
-        "MTLTexture.h",
-        "MTLCommandEncoder.h",
-        "MTLRenderCommandEncoder.h",
-    ];
-
-    single_metal_files := string.[
-        "Metal.h",
-    ];
-
-    // What to point the Bindings_Generator at.
-    src_files: [..]string;
-    for header_name: single_metal_files {
-        filename := sprint("%/%", metal_path, header_name);
-        array_add(*src_files, filename);
-        assert(file_exists(filename), tprint("Expected file to exist: %", filename));
+    if !is_directory(frameworks_path) {
+        log_error("Frameworks path not found at expected location '%'", frameworks_path);
+        return false;
     }
+
+    cf_path           := sprint("%/CoreFoundation.framework/Headers", frameworks_path);
+    metal_path        := tprint("%/Metal.framework/Headers", frameworks_path);
+    quartzcore_path   := tprint("%/QuartzCore.framework/Headers", frameworks_path);
+    coregraphics_path := tprint("%/CoreGraphics.framework/Headers", frameworks_path);
 
     if !is_directory(metal_path) {
         log_error("Metal headers not found at expected location '%'", metal_path);
         return false;
+    }
+
+    input_source_files := string.[
+        tprint("%/Metal.h", metal_path),
+        tprint("%/CAMetalLayer.h", quartzcore_path),
+        tprint("%/CAEDRMetadata.h", quartzcore_path),
+        tprint("%/CGColorSpace.h", coregraphics_path)
+    ];
+
+    // What to point the Bindings_Generator at.
+    src_files: [..]string;
+    for filename: input_source_files {
+        array_add(*src_files, filename);
+        assert(file_exists(filename), tprint("Expected file to exist: %", filename));
     }
 
     opts: Generate_Bindings_Options;
@@ -99,12 +62,14 @@ build :: () -> bool {
 
         header = #string HEADER
 #import "Objective_C";
-#import "macOS";
+#import "macOS"; // TODO: iOS optionally instead
 
 // Types not automatically imported
 IOSurfaceRef :: *void;
 Block :: *void;  // Objective-C blocks - opaque pointer
 task_id_token_t :: u32;  // Mach task identity token
+CGColorSpaceRef :: *void;
+CAEDRMetadata :: *void;
 
 // Forward declaration for NSNumber (used by Metal but not in base Objective_C module)
 NSNumber :: struct { #as using nsobject: NSObject; }
@@ -114,10 +79,18 @@ NSFastEnumeration :: struct {}
 NSCopying :: struct {}
 NSSecureCoding :: struct {}
 
+init_metal :: () {
+
+}
+
 HEADER;
     }
 
-    return generate_bindings(opts, "module.jai");
+    ok := generate_bindings(opts, "module.jai");
+    if ok {
+        print("Metal bindings generated from headers at %\n", metal_path);
+    }
+    return ok;
 }
 
 metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_Visit_Result {
@@ -167,6 +140,8 @@ metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_
         // Here we disambiguate by turning "presentDrawable" into "presentDrawable_atTime"
 
         fns: [..]struct { hash_val: u32; fn: *Function; };
+        defer array_reset(*fns);
+
         for child: decl.(*Struct).declarations {
             if child.kind != .FUNCTION continue;
             fn := child.(*Function);
@@ -175,14 +150,10 @@ metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_
             for fns if it.hash_val == h {
                 other_count += 1;
             }
-            print("% % %\n", fn.output_name, fn.name, h);
             if other_count > 0 {
                 fn.output_name = convert_objc_fn_name(fn.name);
             }
             array_add(*fns, {h, fn});
-            //found, new_val := table_find(*dup_fn_names, h);
-            //value_ptr := table_set(*dup_fn_names, h, new_val + 1);
-            //print("% % % % % %\n", fn.name, h, decl.kind, new_val, *dup_fn_names, value_ptr);
         }
     }
 
@@ -223,12 +194,16 @@ convert_objc_fn_name :: (name: string) -> string {
     assert(name != "");
 
     output := copy_string(name);
+
+    // Convert colons to underscores.
     for 0..output.count-1 {
-        if output.data[it] == #char ":" {
-            output.data[it] = #char "_";
+        if output[it] == #char ":" {
+            output[it] = #char "_";
         }
     }
-    if output[output.count - 1] == ":" {
+
+    // Remove trailing underscore.
+    if output.count > 2 && output[output.count - 1] == #char "_" {
         output.count -= 1;
     }
     return output;
