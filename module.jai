@@ -573,7 +573,6 @@ gpu_shutdown :: () {
 #load "gpu_arena.jai";
 #load "swapchain.jai";
 #load "sync.jai";
-#load "metal_shader_loader.jai";
 
 #if SLANG_COMPILER {
     #load "shader_compiler.jai";

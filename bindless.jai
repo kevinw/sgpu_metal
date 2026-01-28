@@ -1,10 +1,7 @@
 #scope_export
 
-// Global bindless argument table that holds all GPU resources
-global_argument_table: *MTL4ArgumentTable;
-
-// Counter for buffer binding indices
-next_buffer_index: u32 = 0;
+global_argument_table: *MTL4ArgumentTable; // Global bindless argument table that holds all GPU resources
+next_buffer_index: u32 = 0; // Counter for buffer binding indices
 
 // Initialize the global bindless argument table
 init_bindless :: () {
@@ -15,17 +12,20 @@ init_bindless :: () {
     // Create the argument table descriptor
     descriptor := objc_new(MTL4ArgumentTableDescriptor);
     defer release(descriptor);
+    {
+        using MTL4ArgumentTableDescriptor;
 
-    // Set maximum bind counts (these are generous limits for a bindless system)
-    MTL4ArgumentTableDescriptor.setMaxBufferBindCount(descriptor, MAX_BUFFERS.(NSUInteger));
-    MTL4ArgumentTableDescriptor.setMaxTextureBindCount(descriptor, MAX_IMAGES.(NSUInteger));
-    MTL4ArgumentTableDescriptor.setMaxSamplerStateBindCount(descriptor, MAX_SAMPLERS.(NSUInteger));
+        // Set maximum bind counts (these are generous limits for a bindless system)
+        setMaxBufferBindCount      (descriptor, MAX_BUFFERS.(NSUInteger));
+        setMaxTextureBindCount     (descriptor, MAX_IMAGES.(NSUInteger));
+        setMaxSamplerStateBindCount(descriptor, MAX_SAMPLERS.(NSUInteger));
 
-    // Enable support for attribute strides (optional but useful)
-    MTL4ArgumentTableDescriptor.setSupportAttributeStrides(descriptor, 1);
+        // Enable support for attribute strides (optional but useful)
+        setSupportAttributeStrides(descriptor, YES);
 
-    // Don't initialize bindings - we'll set them as needed
-    MTL4ArgumentTableDescriptor.setInitializeBindings(descriptor, 0);
+        // Don't initialize bindings - we'll set them as needed
+        setInitializeBindings(descriptor, NO);
+    }
 
     // Create the global argument table
     error: *NSError = null;
@@ -38,10 +38,7 @@ init_bindless :: () {
         return;
     }
 
-    if global_argument_table == null {
-        log_error("Failed to create global argument table");
-        return;
-    }
+    assert(global_argument_table != null, "Failed to create global argument table");
 
     if 0 log("Bindless argument table initialized with % buffer slots, % texture slots, % sampler slots",
         MAX_BUFFERS, MAX_IMAGES, MAX_SAMPLERS);
@@ -58,18 +55,14 @@ shutdown_bindless :: () {
 register_buffer_in_argument_table :: (gpu_ptr: Gpu_Ptr) -> u32 {
     if global_argument_table == null {
         init_bindless();
-        if global_argument_table == null return 0xFFFFFFFF; // Error
+        assert(global_argument_table != null);
     }
 
     index := atomic_add(*next_buffer_index, 1);
-
-    if index >= MAX_BUFFERS {
-        log_error("Exceeded maximum buffer bind count in argument table");
-        return 0xFFFFFFFF;
-    }
+    assert(index < MAX_BUFFERS, "Exceeded maximum buffer bind count in argument table");
 
     // Set the buffer address in the argument table
-    MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) gpu_ptr, index.(NSUInteger));
+    MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) gpu_ptr, cast(NSUInteger)index);
 
     return index;
 }

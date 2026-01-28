@@ -17,7 +17,14 @@ main :: () {
     swapchain := cast(*CAMetalLayer) SDL_RenderGetMetalLayer(renderer);
     device := CAMetalLayer.device(swapchain);
 
-    queue := MTLDevice.newCommandQueue(device);
+    // Create MTL4 command queue
+    mtl4_desc := objc_new(MTL4CommandQueueDescriptor);
+    error: *NSError = null;
+    queue := MTLDevice.newMTL4CommandQueueWithDescriptor(device, mtl4_desc, *error);
+    release(mtl4_desc);
+
+    // Create command allocator for reuse
+    allocator := MTLDevice.newCommandAllocator(device);
 
     color: MTLClearColor = {0, 0, 0, 1};
 
@@ -46,9 +53,10 @@ main :: () {
 
         surface := CAMetalLayer.nextDrawable(swapchain);
 
-        // Ugh, my eyes are bleeding!
-        pass := MTLRenderPassDescriptor.renderPassDescriptor();
-        color_attachment := MTLRenderPassColorAttachmentDescriptorArray.objectAtIndexedSubscript(MTLRenderPassDescriptor.colorAttachments(pass), 0);
+        // Create MTL4 render pass descriptor
+        pass := objc_new(MTL4RenderPassDescriptor);
+        defer release(pass);
+        color_attachment := MTLRenderPassColorAttachmentDescriptorArray.objectAtIndexedSubscript(MTL4RenderPassDescriptor.colorAttachments(pass), 0);
         {
             using color_attachment;
             setClearColor(color_attachment, color);
@@ -57,12 +65,27 @@ main :: () {
             setTexture(color_attachment, surface.texture(surface));
         }
 
-        buffer := MTLCommandQueue.commandBuffer(queue);
-        encoder := MTLCommandBuffer.renderCommandEncoderWithDescriptor(buffer, pass);
-        MTLRenderCommandEncoder.endEncoding(encoder);
-        MTLCommandBuffer.presentDrawable(buffer, surface);
-        MTLCommandBuffer.commit(buffer);
+        // Create and begin MTL4 command buffer
+        buffer := MTLDevice.newCommandBuffer(device);
+        MTL4CommandBuffer.beginCommandBufferWithAllocator(buffer, allocator);
+
+        // Create MTL4 render encoder
+        encoder := MTL4CommandBuffer.renderCommandEncoderWithDescriptor(buffer, pass);
+        MTL4CommandEncoder.endEncoding(cast(*MTL4CommandEncoder) encoder);
+
+        // End and submit command buffer
+        MTL4CommandBuffer.endCommandBuffer(buffer);
+
+        cmd_buffers: [1] *MTL4CommandBuffer;
+        cmd_buffers[0] = buffer;
+        MTL4CommandQueue.commit(queue, cmd_buffers.data, 1);
+
+        // Present the drawable
+        CAMetalDrawable.present(surface);
     }
+
+    release(allocator);
+    release(queue);
 
     SDL_DestroyRenderer(renderer);
     // Close and destroy the window

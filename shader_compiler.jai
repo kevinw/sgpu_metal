@@ -111,9 +111,10 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
     defer slang.ISlangUnknown_release(metal_code);
 
     // Get the Metal source as a string
-    metal_source: string;
-    metal_source.data = slang.ISlangBlob_getBufferPointer(metal_code);
-    metal_source.count = xx slang.ISlangBlob_getBufferSize(metal_code);
+    metal_source: string = {
+        data = slang.ISlangBlob_getBufferPointer(metal_code),
+        count = xx slang.ISlangBlob_getBufferSize(metal_code),
+    };
 
     // Copy to a new allocation since the blob will be released
     result := copy_string(metal_source);
