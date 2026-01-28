@@ -1,3 +1,6 @@
+gpu_create_compute_pipeline :: (spirv: [] u8) -> Gpu_Pipeline {
+    // TODO: implement me
+}
 
 #scope_module
 
