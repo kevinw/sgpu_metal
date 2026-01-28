@@ -1,6 +1,6 @@
 #import "Basic";
 using,except(NO) SDL :: #import "SDL";
-#import,file "../module.jai";
+#import,file "../module.jai"; // the local Metal module
 #import "Objective_C";
 
 main :: () {

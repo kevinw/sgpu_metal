@@ -40,19 +40,15 @@ build :: () -> bool {
         tprint("%/CGColorSpace.h", coregraphics_path)
     ];
 
-    // What to point the Bindings_Generator at.
-    src_files: [..]string;
-    for filename: input_source_files {
-        array_add(*src_files, filename);
-        assert(file_exists(filename), tprint("Expected file to exist: %", filename));
-    }
+    for input_source_files assert(file_exists(it), tprint("Expected file to exist: %", it));
 
     opts: Generate_Bindings_Options;
     {
         using opts;
         log_unsupported = true;
         generate_compile_time_struct_checks = false;  // ObjC interfaces have opaque layouts
-        array_add(*source_files,  ..src_files);
+        alias_original_enum_names = false; // omit enum aliases like MTLVertexFormatUChar2Normalized :: UChar2Normalized;
+        array_add(*source_files,  ..input_source_files);
         array_add(*extra_clang_arguments,
             "-isysroot", get_macos_sdk_path(),
             "-x", "objective-c++",
@@ -80,6 +76,9 @@ NSNumber :: struct { #as using nsobject: NSObject; }
 NSFastEnumeration :: struct {}
 NSCopying :: struct {}
 NSSecureCoding :: struct {}
+
+Metal :: #library,system,link_always "Metal";  // We were having some problems on Mac, so, try this...
+MTLCreateSystemDefaultDevice :: () -> *MTLDevice #foreign Metal;
 
 MTLClearColorMake :: (red: float64, green: float64, blue: float64, alpha: float64) -> MTLClearColor {
     col: MTLClearColor = ---;
@@ -225,8 +224,6 @@ convert_objc_fn_name :: (name: string) -> string {
     }
     return output;
 }
-
-dup_fn_names: Table(u32, u64);
 
 #import "Bindings_Generator";
 #import "Process";
