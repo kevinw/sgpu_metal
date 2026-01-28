@@ -2,3 +2,4 @@
 *.dSYM/
 .DS_Store
 examples/01_memory
+examples/02_compute

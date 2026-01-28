@@ -1,6 +1,6 @@
 #scope_export
 
-compile_shader :: (shader_path: string, output_directory: string = "", debug_symbols: bool = false) -> bool, [] u8 {
+compile_shader :: (shader_path: string, output_directory: string = "", debug_symbols: bool = false) -> bool, string {
     if !global_session then create_session();
 
     auto_release_temp();
@@ -15,19 +15,10 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
         }
     });
 
+    // Use Metal capability instead of SPIR-V
     array_add(*options, .{
         slang.CompilerOptionName.Capability, .{
-            slang.CompilerOptionValueKind.Int, xx slang.IGlobalSession_findCapability(global_session, "spirv_1_6"), 0, null, null
-        }
-    });
-    array_add(*options, .{
-        slang.CompilerOptionName.GLSLForceScalarLayout, .{
-            slang.CompilerOptionValueKind.Int, 1, 0, null, null
-        }
-    });
-    array_add(*options, .{
-        slang.CompilerOptionName.VulkanInvertY, .{
-            slang.CompilerOptionValueKind.Int, 1, 0, null, null
+            slang.CompilerOptionValueKind.Int, xx slang.IGlobalSession_findCapability(global_session, "metal"), 0, null, null
         }
     });
 
@@ -39,11 +30,11 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
         });
     }
 
+    // Target Metal shading language
+    // Use metal profile for macOS
     target_desc := slang.TargetDesc.{
-        format = .SLANG_SPIRV,
+        format = .SLANG_METAL,
         profile = slang.IGlobalSession_findProfile(global_session, "sm_6_0"),
-        forceGLSLScalarBufferLayout = true,
-        flags = xx slang.SLANG_TARGET_FLAG.GENERATE_SPIRV_DIRECTLY,
         compilerOptionEntries = options.data,
         compilerOptionEntryCount = xx options.count,
     };
@@ -63,19 +54,26 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
 
     session: *slang.ISession;
     slang.IGlobalSession_createSession(global_session, *session_desc, *session);
-    if !session then return false, .[];
+    if !session then return false, "";
     defer slang.ISlangUnknown_release(session);
 
-    diagnostic_blob: *slang.IBlob;
+    diagnostic_blob: *slang.IBlob = null;
     slang_module := slang.ISession_loadModule(session, temp_c_string(shader_path), *diagnostic_blob);
-    if diagnostic_blob then log_diagnostic_blob(diagnostic_blob);
-    if !slang_module then return false, .{};
+    if diagnostic_blob != null {
+        log_diagnostic_blob(diagnostic_blob);
+        diagnostic_blob = null;
+    }
+    if !slang_module then return false, "";
 
     entry_points: [..] *slang.IEntryPoint;
     entry_points.allocator = temp;
     {
         main := array_add(*entry_points);
-        slang.IModule_findEntryPointByName(slang_module, "main", main);
+        // Try "computeMain" first, then fall back to "main"
+        slang.IModule_findEntryPointByName(slang_module, "computeMain", main);
+        if main.* == null {
+            slang.IModule_findEntryPointByName(slang_module, "main", main);
+        }
     }
 
     components: [..] *slang.IComponentType;
@@ -87,32 +85,45 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
 
     composed_program: *slang.IComponentType;
     slang.ISession_createCompositeComponentType(session, components.data, components.count, *composed_program, *diagnostic_blob);
-    if diagnostic_blob then log_diagnostic_blob(diagnostic_blob);
-    if !composed_program then return false, .{};
+    if diagnostic_blob != null {
+        log_diagnostic_blob(diagnostic_blob);
+        diagnostic_blob = null;
+    }
+    if !composed_program then return false, "";
     defer slang.ISlangUnknown_release(composed_program);
 
     linked_program: *slang.IComponentType;
-    slang.IComponentType_link(composed_program, *linked_program);
-    if diagnostic_blob then log_diagnostic_blob(diagnostic_blob);
-    if !linked_program then return false, .{};
+    link_result := slang.IComponentType_link(composed_program, *linked_program, *diagnostic_blob);
+    if diagnostic_blob != null {
+        log_diagnostic_blob(diagnostic_blob);
+        diagnostic_blob = null;
+    }
+    if !slang.SLANG_SUCCEEDED(link_result) || !linked_program then return false, "";
+    defer slang.ISlangUnknown_release(linked_program);
 
-    spirv_code: *slang.IBlob;
-    slang.IComponentType_getEntryPointCode(linked_program, 0, 0, *spirv_code, *diagnostic_blob);
-    if diagnostic_blob then log_diagnostic_blob(diagnostic_blob);
+    metal_code: *slang.IBlob = null;
+    slang.IComponentType_getEntryPointCode(linked_program, 0, 0, *metal_code, *diagnostic_blob);
+    if diagnostic_blob != null {
+        log_diagnostic_blob(diagnostic_blob);
+        diagnostic_blob = null;
+    }
+    if !metal_code then return false, "";
+    defer slang.ISlangUnknown_release(metal_code);
 
-    spirv_code_raw: [] u8 = NewArray(xx slang.ISlangBlob_getBufferSize(spirv_code), u8);
+    // Get the Metal source as a string
+    metal_source: string;
+    metal_source.data = slang.ISlangBlob_getBufferPointer(metal_code);
+    metal_source.count = xx slang.ISlangBlob_getBufferSize(metal_code);
 
-    memcpy(spirv_code_raw.data, slang.ISlangBlob_getBufferPointer(spirv_code), spirv_code_raw.count);
-
-    slang.ISlangUnknown_release(spirv_code);
+    // Copy to a new allocation since the blob will be released
+    result := copy_string(metal_source);
 
     if output_directory {
-        output_path := tprint("%/%.spv", output_directory, path_strip_extension(filename));
-
-        write_entire_file(output_path, spirv_code_raw.data, spirv_code_raw.count);
+        output_path := tprint("%/%.metal", output_directory, path_strip_extension(path_filename(filename)));
+        write_entire_file(output_path, result);
     }
 
-    return true, spirv_code_raw;
+    return true, result;
 }
 
 #scope_file

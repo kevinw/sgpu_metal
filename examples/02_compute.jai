@@ -15,9 +15,9 @@ main :: () {
 
     // Raw precompiled spirv can be passed to `gpu_create_compute_pipeline`
     // or the included slang shader compiler can be used to compile slang shaders.
-    success, spirv := compile_shader("../shaders/compute.slang");
-    assert(success);
-    pipeline := gpu_create_compute_pipeline(spirv);
+    success, metal_source := compile_shader("shaders/compute.slang");
+    assert(success, "Failed to compile shader");
+    pipeline := gpu_create_compute_pipeline(metal_source);
     defer gpu_free_pipeline(pipeline);
 
     // We will use the dedicated compute queue here but we could also use the MAIN queue.
@@ -46,7 +46,9 @@ main :: () {
     for 0..COUNT-1 {
         assert(buffer_cpu.*[it] == 1.0);
     }
+
+    print("OK!\n");
 }
 
-#import,file "../module.jai"(VALIDATION = true);
+#import,file "../module.jai"(VALIDATION = true, SLANG_COMPILER = true);
 #import "Basic";

@@ -185,6 +185,7 @@ Command_Buffer_Info :: struct {
     mtl_cmd_buffer: *MTLCommandBuffer;
     queue: Gpu_Queue;
     current_blit_encoder: *MTLBlitCommandEncoder;
+    current_pipeline: Gpu_Pipeline;
 }
 
 live_command_buffers: [..] Command_Buffer_Info;
