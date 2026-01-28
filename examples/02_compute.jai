@@ -13,9 +13,10 @@ main :: () {
         buffer_cpu.*[it] = 0.0;
     }
 
-    // Load the Metal shader that uses MTL4 argument tables for bindless access
-    success, metal_source := load_and_compile_metal_shader("shaders/compute_bindless.metal");
-    assert(success, "Failed to load Metal shader");
+    // Compile Slang shader to Metal with MTL4 argument table bindless support
+    // The Slang shader uses preprocessor directives to generate Metal-compatible code
+    success, metal_source := compile_shader("shaders/compute.slang");
+    assert(success, "Failed to compile shader");
     pipeline := gpu_create_compute_pipeline(metal_source);
     defer gpu_free_pipeline(pipeline);
 
@@ -55,5 +56,5 @@ main :: () {
     print("OK!\n");
 }
 
-#import,file "../module.jai"(VALIDATION = true, SLANG_COMPILER = false);
+#import,file "../module.jai"(VALIDATION = true, SLANG_COMPILER = true);
 #import "Basic";
