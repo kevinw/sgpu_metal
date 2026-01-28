@@ -5,3 +5,4 @@ examples/01_memory
 examples/02_compute
 modules/Metal/generate
 modules/Metal/examples/sdl_metal
+examples/shadertoy/shadertoy
