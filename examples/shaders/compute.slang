@@ -7,5 +7,5 @@ void computeMain(uint3 dispatchThreadID : SV_DispatchThreadID,
                  uniform RWStructuredBuffer<float> outputBuffer)
 {
     uint index = dispatchThreadID.x;
-    outputBuffer[index] = 1.0;
+    outputBuffer[index] = index;
 }

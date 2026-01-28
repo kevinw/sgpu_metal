@@ -553,11 +553,13 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
     return_if_error(result);
 
     init_queues();
+    init_bindless();
 
     return result;
 }
 
 gpu_shutdown :: () {
+    shutdown_bindless();
     shutdown_queues();
 }
 
@@ -571,6 +573,7 @@ gpu_shutdown :: () {
 #load "gpu_arena.jai";
 #load "swapchain.jai";
 #load "sync.jai";
+#load "metal_shader_loader.jai";
 
 #if SLANG_COMPILER {
     #load "shader_compiler.jai";
@@ -601,9 +604,9 @@ mtl_device: *MTLDevice;
 
 supports_descriptor_buffers: bool;
 
-MAX_BUFFERS  :: 10000;
-MAX_IMAGES   :: 10000;
-MAX_SAMPLERS :: 1000;
+MAX_BUFFERS  :: 1000;
+MAX_IMAGES   :: 1000;
+MAX_SAMPLERS :: 100;
 
 MAX_COMPUTE_QUEUES  :: 4;
 MAX_TRANSFER_QUEUES :: 2;

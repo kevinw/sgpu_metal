@@ -135,6 +135,7 @@ Gpu_Timeline_Pair :: struct {
 
 Queue :: struct {
     mtl_queue: *MTLCommandQueue;
+    mtl4_queue: *MTL4CommandQueue;  // For MTL4 bindless features
     index_in_type: u32;
     type: Gpu_Queue_Type;
 }
@@ -143,17 +144,29 @@ Queue :: struct {
 queues: [7] Queue;
 
 init_queues :: () {
+    auto_release_temp();
+
     // Create command queues for each type
     // MAIN queue
     queues[0].type = .MAIN;
     queues[0].index_in_type = 0;
     queues[0].mtl_queue = MTLDevice.newCommandQueue(mtl_device);
 
+    // Also create an MTL4 queue for bindless features
+    mtl4_desc := objc_new(MTL4CommandQueueDescriptor);
+    defer release(mtl4_desc);
+    error: *NSError = null;
+    queues[0].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
+
     // COMPUTE queues (4 of them, but Metal doesn't really distinguish - they all go to same HW)
     for i: 0..MAX_COMPUTE_QUEUES-1 {
         queues[1 + i].type = .COMPUTE;
         queues[1 + i].index_in_type = i.(u32);
         queues[1 + i].mtl_queue = MTLDevice.newCommandQueue(mtl_device);
+
+        // Create MTL4 queue for bindless
+        error = null;
+        queues[1 + i].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
     }
 
     // TRANSFER queues (2 of them)
@@ -161,6 +174,10 @@ init_queues :: () {
         queues[5 + i].type = .TRANSFER;
         queues[5 + i].index_in_type = i.(u32);
         queues[5 + i].mtl_queue = MTLDevice.newCommandQueue(mtl_device);
+
+        // Create MTL4 queue for bindless
+        error = null;
+        queues[5 + i].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
     }
 }
 
@@ -169,6 +186,10 @@ shutdown_queues :: () {
         if it.mtl_queue != null {
             release(it.mtl_queue);
             it.mtl_queue = null;
+        }
+        if it.mtl4_queue != null {
+            release(it.mtl4_queue);
+            it.mtl4_queue = null;
         }
     }
 }

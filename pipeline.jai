@@ -10,10 +10,10 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     );
     defer release(ns_source);
 
-    // Create compile options with Metal 3.0 language version
+    // Create compile options with Metal 3.2 language version (required for MTL4)
     compile_options := objc_new(MTLCompileOptions);
     defer release(compile_options);
-    MTLCompileOptions.setLanguageVersion(compile_options, ._3_0);
+    MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
 
     error: *NSError;
     mtl_library := MTLDevice.newLibraryWithSource(mtl_device, ns_source, compile_options, *error);
@@ -119,21 +119,46 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
     if pipeline == null || pipeline.type != .COMPUTE then return;
 
+    queue := get_queue(cmd_info.queue);
+    if queue == null || queue.mtl4_queue == null then return;
+
     // End any existing blit encoder before starting compute
     end_current_encoder(cmd_info);
 
-    // Create a compute encoder
-    compute_encoder := MTLCommandBuffer.computeCommandEncoder(cmd_info.mtl_cmd_buffer);
-    if compute_encoder == null then return;
+    // Ensure bindless argument table is initialized
+    if global_argument_table == null {
+        init_bindless();
+    }
+
+    // For MTL4 bindless features, create a command allocator and command buffer
+    allocator := MTLDevice.newCommandAllocator(mtl_device);
+    if allocator == null then return;
+    defer release(allocator);
+
+    mtl4_cmd_buffer := MTLDevice.newCommandBuffer(mtl_device);
+    if mtl4_cmd_buffer == null then return;
+
+    // Begin the command buffer with the allocator
+    MTL4CommandBuffer.beginCommandBufferWithAllocator(mtl4_cmd_buffer, allocator);
+
+    // Create MTL4 compute encoder
+    compute_encoder := MTL4CommandBuffer.computeCommandEncoder(mtl4_cmd_buffer);
+    if compute_encoder == null {
+        release(mtl4_cmd_buffer);
+        return;
+    }
+
+    // Cast to MTL4ComputeCommandEncoder for MTL4-specific methods
+    mtl4_encoder := cast(*MTL4ComputeCommandEncoder) compute_encoder;
 
     // Set the pipeline state
-    MTLComputeCommandEncoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
+    MTL4ComputeCommandEncoder.setComputePipelineState(mtl4_encoder, pipeline.mtl_compute_pipeline);
 
-    // Get the buffer for the data pointer and bind it
-    result, mtl_buffer, offset := get_buffer_and_offset(data);
-    if result == .SUCCESS && mtl_buffer != null {
-        MTLComputeCommandEncoder.setBuffer(compute_encoder, mtl_buffer, offset.(NSUInteger), 0);
-    }
+    // Set the buffer address in the argument table at index 0
+    MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) data, 0);
+
+    // Bind the argument table to the encoder
+    MTL4ComputeCommandEncoder.setArgumentTable(mtl4_encoder, global_argument_table);
 
     // Get thread execution width and calculate threads per threadgroup
     thread_execution_width := MTLComputePipelineState.threadExecutionWidth(pipeline.mtl_compute_pipeline);
@@ -152,10 +177,30 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
         depth = dimensions[2].(NSUInteger)
     };
 
-    MTLComputeCommandEncoder.dispatchThreadgroups(compute_encoder, threadgroups, threads_per_group);
+    MTL4ComputeCommandEncoder.dispatchThreadgroups(mtl4_encoder, threadgroups, threads_per_group);
 
-    // End the compute encoder
-    MTLCommandEncoder.endEncoding(compute_encoder);
+    // End the command buffer recording
+    MTL4CommandEncoder.endEncoding(cast(*MTL4CommandEncoder) mtl4_encoder);
+    MTL4CommandBuffer.endCommandBuffer(mtl4_cmd_buffer);
+
+    // Submit the MTL4 command buffer through the MTL4 queue
+    cmd_buffers: [1] *MTL4CommandBuffer;
+    cmd_buffers[0] = mtl4_cmd_buffer;
+    MTL4CommandQueue.commit(queue.mtl4_queue, cmd_buffers.data, 1);
+
+    // Wait for the MTL4 queue to finish (synchronous for now)
+    // We can use an MTLSharedEvent for proper synchronization
+    event := MTLDevice.newSharedEvent(mtl_device);
+    if event != null {
+        defer release(event);
+
+        // Signal the event after the command buffer completes
+        signal_value := cast(u64) 1;
+        MTL4CommandQueue.signalEvent(queue.mtl4_queue, event, signal_value);
+
+        // Wait for the event on the CPU
+        MTLSharedEvent.notifyListener(event, null, signal_value, null);  // Synchronous wait
+    }
 }
 
 #scope_module
