@@ -1,3 +1,5 @@
+OMIT_TYPE_INFO_FOR_METAL_TYPES :: true; // Info: This struct is generating a lot of Type_Info data (10096 bytes). If you don't need Type_Info for this struct's members, you can use #type_info_none to eliminate almost all this data.
+
 #if false {
     #run {
         set_build_options_dc(.{do_output = false});
@@ -79,6 +81,15 @@ NSFastEnumeration :: struct {}
 NSCopying :: struct {}
 NSSecureCoding :: struct {}
 
+MTLClearColorMake :: (red: float64, green: float64, blue: float64, alpha: float64) -> MTLClearColor {
+    col: MTLClearColor = ---;
+    col.red = red;
+    col.green = green;
+    col.blue = blue;
+    col.alpha = alpha;
+    return col;
+}
+
 init_metal :: () {
 
 }
@@ -133,7 +144,13 @@ metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_
         }
     }
 
-    if parent_decl == null && decl.kind == .STRUCT && starts_with(decl.output_name, "MTL") {
+    do_objc_logic :: (decl: *Declaration) -> bool { return starts_with(decl.output_name, "MTL") || starts_with(decl.output_name, "CAMetal"); }
+
+    if parent_decl == null && decl.kind == .STRUCT && do_objc_logic(decl) {
+        if OMIT_TYPE_INFO_FOR_METAL_TYPES {
+            decl.decl_flags |= .TYPE_INFO_NONE;
+        }
+
         // The bindings generator will "helpfully" give us output names which
         // might clash with other functions with identical argument types.
         //
@@ -157,7 +174,7 @@ metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_
         }
     }
 
-    if parent_decl && parent_decl.kind == .STRUCT && starts_with(parent_decl.output_name, "MTL") {
+    if parent_decl && parent_decl.kind == .STRUCT && do_objc_logic(parent_decl) {
         // The bindings generator doesn't handle NSObject hierarchies at the moment.
         // Skip them for now, since all we use all MTL objects by pointer anyways.
         if decl.output_name == "nsobject" || decl.output_name == "isa" || decl.output_name == "ID" {
