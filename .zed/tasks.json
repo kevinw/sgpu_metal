@@ -3,4 +3,8 @@
     "label": "Generate Metal Bindings",
     "command": "cd modules/Metal && rm -f module.jai && jai -quiet generate.jai +Autorun && jai module.jai",
   },
+  {
+    "label": "Build and run SDL Metal Example",
+    "command": "cd modules/Metal/examples && jai -quiet sdl_metal.jai +Autorun",
+  },
 ]
