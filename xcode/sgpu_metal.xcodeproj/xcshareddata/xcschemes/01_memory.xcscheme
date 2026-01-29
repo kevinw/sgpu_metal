@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DEFD749F2F2B8F5A00AF6C08"
-               BuildableName = "02_compute"
-               BlueprintName = "02_compute"
+               BlueprintIdentifier = "DEFD74A32F2B8F6200AF6C08"
+               BuildableName = "01_memory"
+               BlueprintName = "01_memory"
                ReferencedContainer = "container:sgpu_metal.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -39,22 +39,12 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES"
-      viewDebuggingEnabled = "No">
+      allowLocationSimulation = "YES">
       <PathRunnable
          runnableDebuggingMode = "0"
          Location = "workspace"
-         FilePath = "../examples/02_compute">
+         FilePath = "../examples/01_memory">
       </PathRunnable>
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DEFD749F2F2B8F5A00AF6C08"
-            BuildableName = "02_compute"
-            BlueprintName = "02_compute"
-            ReferencedContainer = "container:sgpu_metal.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -62,16 +52,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "DEFD749F2F2B8F5A00AF6C08"
-            BuildableName = "02_compute"
-            BlueprintName = "02_compute"
+            BlueprintIdentifier = "DEFD74A32F2B8F6200AF6C08"
+            BuildableName = "01_memory"
+            BlueprintName = "01_memory"
             ReferencedContainer = "container:sgpu_metal.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

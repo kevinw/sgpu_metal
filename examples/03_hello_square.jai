@@ -10,7 +10,7 @@ main :: () {
     assert(result == .SUCCESS);
     defer gpu_shutdown();
 
-    window := create_native_window(1280, 720, "Sample Window");
+    window := create_native_window(1280, 720, "03_hello_square");
 
     window_type: Native_Window_Type;
     #if      OS == .WINDOWS then window_type = .WIN32;

@@ -6,11 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		DEFD74882F2B83FA00AF6C08 /* 03_hello_square */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = 03_hello_square; sourceTree = BUILT_PRODUCTS_DIR; };
-		DEFD74952F2B85A500AF6C08 /* 02_compute */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = 02_compute; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
 /* Begin PBXGroup section */
 		DEFD74702F2B837C00AF6C08 = {
 			isa = PBXGroup;
@@ -22,50 +17,62 @@
 		DEFD747A2F2B837C00AF6C08 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				DEFD74882F2B83FA00AF6C08 /* 03_hello_square */,
-				DEFD74952F2B85A500AF6C08 /* 02_compute */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
-/* Begin PBXNativeTarget section */
-		DEFD74872F2B83FA00AF6C08 /* 03_hello_square */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DEFD748C2F2B83FA00AF6C08 /* Build configuration list for PBXNativeTarget "03_hello_square" */;
+/* Begin PBXLegacyTarget section */
+		DEFD749B2F2B8B9700AF6C08 /* 03_hello_square */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(SRCROOT)/xcode-jai-build.sh $(ACTION)";
+			buildConfigurationList = DEFD749C2F2B8B9700AF6C08 /* Build configuration list for PBXLegacyTarget "03_hello_square" */;
 			buildPhases = (
-				DEFD748F2F2B841C00AF6C08 /* ShellScript */,
 			);
-			buildRules = (
-			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
 			dependencies = (
 			);
 			name = 03_hello_square;
 			packageProductDependencies = (
 			);
+			passBuildSettingsInEnvironment = 1;
 			productName = 03_hello_square;
-			productReference = DEFD74882F2B83FA00AF6C08 /* 03_hello_square */;
-			productType = "com.apple.product-type.tool";
 		};
-		DEFD74902F2B85A500AF6C08 /* 02_compute */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DEFD74922F2B85A500AF6C08 /* Build configuration list for PBXNativeTarget "02_compute" */;
+		DEFD749F2F2B8F5A00AF6C08 /* 02_compute */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(SRCROOT)/xcode-jai-build.sh $(ACTION)";
+			buildConfigurationList = DEFD74A02F2B8F5A00AF6C08 /* Build configuration list for PBXLegacyTarget "02_compute" */;
 			buildPhases = (
-				DEFD74912F2B85A500AF6C08 /* ShellScript */,
 			);
-			buildRules = (
-			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
 			dependencies = (
 			);
 			name = 02_compute;
 			packageProductDependencies = (
 			);
+			passBuildSettingsInEnvironment = 1;
 			productName = 03_hello_square;
-			productReference = DEFD74952F2B85A500AF6C08 /* 02_compute */;
-			productType = "com.apple.product-type.tool";
 		};
-/* End PBXNativeTarget section */
+		DEFD74A32F2B8F6200AF6C08 /* 01_memory */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(SRCROOT)/xcode-jai-build.sh $(ACTION)";
+			buildConfigurationList = DEFD74A42F2B8F6200AF6C08 /* Build configuration list for PBXLegacyTarget "01_memory" */;
+			buildPhases = (
+			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
+			dependencies = (
+			);
+			name = 01_memory;
+			packageProductDependencies = (
+			);
+			passBuildSettingsInEnvironment = 1;
+			productName = 03_hello_square;
+		};
+/* End PBXLegacyTarget section */
 
 /* Begin PBXProject section */
 		DEFD74712F2B837C00AF6C08 /* Project object */ = {
@@ -74,7 +81,7 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					DEFD74872F2B83FA00AF6C08 = {
+					DEFD749B2F2B8B9700AF6C08 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -93,52 +100,12 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				DEFD74902F2B85A500AF6C08 /* 02_compute */,
-				DEFD74872F2B83FA00AF6C08 /* 03_hello_square */,
+				DEFD749B2F2B8B9700AF6C08 /* 03_hello_square */,
+				DEFD749F2F2B8F5A00AF6C08 /* 02_compute */,
+				DEFD74A32F2B8F6200AF6C08 /* 01_memory */,
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		DEFD748F2F2B841C00AF6C08 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				examples/02_compute,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd ${PROJECT_DIR}/../examples && ~/jai/bin/jai-macos -very_debug -quiet 03_hello_square.jai\n";
-		};
-		DEFD74912F2B85A500AF6C08 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				examples/03_hello_square,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd ${PROJECT_DIR}/../examples && ~/jai/bin/jai-macos -very_debug -quiet 02_compute.jai\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		DEFD747E2F2B837C00AF6C08 /* Debug */ = {
@@ -258,42 +225,83 @@
 			};
 			name = Release;
 		};
-		DEFD748D2F2B83FA00AF6C08 /* Debug */ = {
+		DEFD749D2F2B8B9700AF6C08 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEBUGGING_SYMBOLS = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 9VL2APQ6QE;
-				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
 		};
-		DEFD748E2F2B83FA00AF6C08 /* Release */ = {
+		DEFD749E2F2B8B9700AF6C08 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 9VL2APQ6QE;
-				ENABLE_HARDENED_RUNTIME = YES;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
 		};
-		DEFD74932F2B85A500AF6C08 /* Debug */ = {
+		DEFD74A12F2B8F5A00AF6C08 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEBUGGING_SYMBOLS = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 9VL2APQ6QE;
-				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
 		};
-		DEFD74942F2B85A500AF6C08 /* Release */ = {
+		DEFD74A22F2B8F5A00AF6C08 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 9VL2APQ6QE;
-				ENABLE_HARDENED_RUNTIME = YES;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		DEFD74A52F2B8F6200AF6C08 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEBUGGING_SYMBOLS = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9VL2APQ6QE;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		DEFD74A62F2B8F6200AF6C08 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9VL2APQ6QE;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -310,20 +318,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DEFD748C2F2B83FA00AF6C08 /* Build configuration list for PBXNativeTarget "03_hello_square" */ = {
+		DEFD749C2F2B8B9700AF6C08 /* Build configuration list for PBXLegacyTarget "03_hello_square" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DEFD748D2F2B83FA00AF6C08 /* Debug */,
-				DEFD748E2F2B83FA00AF6C08 /* Release */,
+				DEFD749D2F2B8B9700AF6C08 /* Debug */,
+				DEFD749E2F2B8B9700AF6C08 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DEFD74922F2B85A500AF6C08 /* Build configuration list for PBXNativeTarget "02_compute" */ = {
+		DEFD74A02F2B8F5A00AF6C08 /* Build configuration list for PBXLegacyTarget "02_compute" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DEFD74932F2B85A500AF6C08 /* Debug */,
-				DEFD74942F2B85A500AF6C08 /* Release */,
+				DEFD74A12F2B8F5A00AF6C08 /* Debug */,
+				DEFD74A22F2B8F5A00AF6C08 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DEFD74A42F2B8F6200AF6C08 /* Build configuration list for PBXLegacyTarget "01_memory" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DEFD74A52F2B8F6200AF6C08 /* Debug */,
+				DEFD74A62F2B8F6200AF6C08 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
