@@ -6,10 +6,43 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXFileReference section */
+		DEFD74A72F2B929F00AF6C08 /* bindless.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = bindless.jai; path = ../bindless.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74A82F2B929F00AF6C08 /* command_buffer.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = command_buffer.jai; path = ../command_buffer.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74A92F2B929F00AF6C08 /* gpu_arena.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = gpu_arena.jai; path = ../gpu_arena.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AA2F2B929F00AF6C08 /* memory.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = memory.jai; path = ../memory.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AB2F2B929F00AF6C08 /* module.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = module.jai; path = ../module.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AC2F2B929F00AF6C08 /* pipeline.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = pipeline.jai; path = ../pipeline.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AD2F2B929F00AF6C08 /* pool.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = pool.jai; path = ../pool.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AE2F2B929F00AF6C08 /* render_capture.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = render_capture.jai; path = ../render_capture.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74AF2F2B929F00AF6C08 /* shader_compiler.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = shader_compiler.jai; path = ../shader_compiler.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B02F2B929F00AF6C08 /* swapchain.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = swapchain.jai; path = ../swapchain.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B12F2B929F00AF6C08 /* sync.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = sync.jai; path = ../sync.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B22F2B929F00AF6C08 /* textures.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = textures.jai; path = ../textures.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B52F2B92F200AF6C08 /* 01_memory.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = 01_memory.jai; path = ../examples/01_memory.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B62F2B92F200AF6C08 /* 02_compute.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = 02_compute.jai; path = ../examples/02_compute.jai; sourceTree = SOURCE_ROOT; };
+		DEFD74B72F2B92F200AF6C08 /* 03_hello_square.jai */ = {isa = PBXFileReference; explicitFileType = sourcecode.c; name = 03_hello_square.jai; path = ../examples/03_hello_square.jai; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
 /* Begin PBXGroup section */
 		DEFD74702F2B837C00AF6C08 = {
 			isa = PBXGroup;
 			children = (
+				DEFD74B52F2B92F200AF6C08 /* 01_memory.jai */,
+				DEFD74B62F2B92F200AF6C08 /* 02_compute.jai */,
+				DEFD74B72F2B92F200AF6C08 /* 03_hello_square.jai */,
+				DEFD74A72F2B929F00AF6C08 /* bindless.jai */,
+				DEFD74A82F2B929F00AF6C08 /* command_buffer.jai */,
+				DEFD74A92F2B929F00AF6C08 /* gpu_arena.jai */,
+				DEFD74AA2F2B929F00AF6C08 /* memory.jai */,
+				DEFD74AB2F2B929F00AF6C08 /* module.jai */,
+				DEFD74AC2F2B929F00AF6C08 /* pipeline.jai */,
+				DEFD74AD2F2B929F00AF6C08 /* pool.jai */,
+				DEFD74AE2F2B929F00AF6C08 /* render_capture.jai */,
+				DEFD74AF2F2B929F00AF6C08 /* shader_compiler.jai */,
+				DEFD74B02F2B929F00AF6C08 /* swapchain.jai */,
+				DEFD74B12F2B929F00AF6C08 /* sync.jai */,
+				DEFD74B22F2B929F00AF6C08 /* textures.jai */,
 				DEFD747A2F2B837C00AF6C08 /* Products */,
 			);
 			sourceTree = "<group>";
