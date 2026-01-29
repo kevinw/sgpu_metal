@@ -15,9 +15,8 @@ main :: () {
 
     // Compile Slang shader to Metal with MTL4 argument table bindless support
     // The Slang shader uses preprocessor directives to generate Metal-compatible code
-    success, metal_source := compile_shader("shaders/compute.slang");
-    assert(success, "Failed to compile shader");
-    pipeline := gpu_create_compute_pipeline(metal_source);
+    success, compiled_shader := compile_shader("shaders/compute.slang"); assert(success, "Failed to compile shader");
+    pipeline := gpu_create_compute_pipeline(compiled_shader);
     defer gpu_free_pipeline(pipeline);
 
     // We will use the dedicated compute queue here but we could also use the MAIN queue.
@@ -42,12 +41,8 @@ main :: () {
     gpu_dispatch(cmd_buff, buffer_gpu, .[(COUNT + 63) / 64, 1, 1]);
 
     gpu_submit(cmd_buff);
-
     gpu_wait_idle();
 
-    // MTL4 queues are async - give them time to complete
-    // TODO: Implement proper fence/event synchronization
-    sleep_milliseconds(100);
 
     for 0..COUNT-1 {
         assert(buffer_cpu.*[it] == 1.0);

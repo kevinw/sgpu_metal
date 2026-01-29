@@ -262,6 +262,7 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
         return 0;
     }
 
+    add_to_residency(render_pipeline);
     handle := pool_add(*live_pipelines, .{
         type = .GRAPHICS,
         mtl_compute_pipeline = null,
@@ -288,10 +289,11 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     if cmd_info == null then return;
 
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
-    if pipeline == null || pipeline.type != .COMPUTE then return;
+    return_if(pipeline == null, tprint("gpu_dispatch: no pipeline for %", cmd_info.current_pipeline));
+    return_if(pipeline.type != .COMPUTE, "gpu_dispatch: pipeline is not .COMPUTE");
 
     queue := get_queue(cmd_info.queue);
-    if queue == null || queue.mtl4_queue == null then return;
+    return_if(queue == null || queue.mtl4_queue == null, tprint("gpu_dispatch: no queue (cmd_info.queue is %)", cmd_info.queue));
 
     // End any existing render encoder before starting compute
     end_current_render_encoder(cmd_info);
@@ -411,13 +413,22 @@ blend_op_to_mtl :: (op: Blend) -> MTLBlendOperation {
 }
 
 color_write_mask_to_mtl :: (mask: Component_Flags) -> MTLColorWriteMask {
+    if mask == .ALL then return cast(MTLColorWriteMask)MTLColorWriteMask_1.All;
+
     result: MTLColorWriteMask = 0;
     if mask & .R then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Red;
     if mask & .G then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Green;
     if mask & .B then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Blue;
     if mask & .A then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Alpha;
-    if mask == .ALL then result = cast(MTLColorWriteMask) MTLColorWriteMask_1.All;
+
     return result;
+}
+
+return_if :: (cond: bool, message: string) #expand {
+    if cond {
+        log_error(message);
+        `return;
+    }
 }
 
 NSUTF8StringEncoding :: 4;

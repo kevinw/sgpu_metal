@@ -28,12 +28,16 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
 
     // Create the Metal buffer
     mtl_buffer := MTLDevice.newBufferWithLength(mtl_device, size.(NSUInteger), options);
+    assert(mtl_buffer != null);
     if mtl_buffer == null {
         return null, 0;
     }
 
+    add_to_residency(mtl_buffer);
+
     // Get the GPU address
     gpu_ptr := cast(Gpu_Ptr) MTLBuffer.gpuAddress(mtl_buffer);
+    print("mtl_buffer % gpu_ptr %\n", mtl_buffer, gpu_ptr);
     if gpu_ptr == 0 {
         // Failed to get GPU address - this shouldn't happen on modern Metal
         // Release the buffer (Metal uses reference counting, but we created it)

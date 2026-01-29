@@ -143,8 +143,6 @@ gpu_frame_index :: () -> u32 {
 
 #scope_module
 
-MAX_FRAMES_IN_FLIGHT :: 3;
-
 native_window_handle: u64;
 native_window_type: Native_Window_Type;
 swapchain_layer: *CAMetalLayer;

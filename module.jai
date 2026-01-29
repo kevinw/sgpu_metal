@@ -1,5 +1,5 @@
 #module_parameters(
-    // Optionally enables Vulkan validation layers.
+    // Optionally enables Metal validation layers.
     VALIDATION := false,
     // Optionally enables debug assertions within the sgpu module
     DEBUG_ASSERTS := false,
@@ -552,6 +552,7 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
     result := create_device();
     return_if_error(result);
 
+    init_residency();
     init_queues();
     init_bindless();
 
@@ -561,6 +562,7 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
 gpu_shutdown :: () {
     shutdown_bindless();
     shutdown_queues();
+    shutdown_residency();
 }
 
 #load "pool.jai";
@@ -573,10 +575,8 @@ gpu_shutdown :: () {
 #load "gpu_arena.jai";
 #load "swapchain.jai";
 #load "sync.jai";
-
-#if SLANG_COMPILER {
-    #load "shader_compiler.jai";
-}
+#load "residency.jai";
+#if SLANG_COMPILER #load "shader_compiler.jai";
 
 // we remember the allocator passed into gpu_init and ensure all cpu allocations occur using that allocator.
 cpu_allocator: Allocator;
@@ -603,12 +603,14 @@ mtl_device: *MTLDevice;
 
 supports_descriptor_buffers: bool;
 
-MAX_BUFFERS  :: 30;
-MAX_IMAGES   :: 100;
-MAX_SAMPLERS :: 16;
+MAX_BUFFERS  :: 5;
+MAX_IMAGES   :: 10;
+MAX_SAMPLERS :: 5;
 
 MAX_COMPUTE_QUEUES  :: 4;
 MAX_TRANSFER_QUEUES :: 2;
+
+MAX_FRAMES_IN_FLIGHT :: 3;
 
 // 16 seems like a reasonable cap on this. Prevents some unnecessary heap allocations
 MAX_ATTACHMENTS :: 16;
