@@ -87,6 +87,190 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     return handle;
 }
 
+gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+    auto_release_temp();
+
+    // Create library from vertex shader Metal source
+    ns_vertex_source := NSString.initWithBytes(
+        objc_alloc(NSString),
+        vertex_metal.data,
+        vertex_metal.count.(NSUInteger),
+        NSUTF8StringEncoding
+    );
+    defer release(ns_vertex_source);
+
+    compile_options := objc_new(MTLCompileOptions);
+    defer release(compile_options);
+    MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
+
+    error: *NSError;
+    vertex_library := MTLDevice.newLibraryWithSource(mtl_device, ns_vertex_source, compile_options, *error);
+    if error != null {
+        error_str := to_string(NSError.localizedDescription(error));
+        log_error("Failed to compile vertex shader: %", error_str);
+        return 0;
+    }
+    if vertex_library == null {
+        log_error("Failed to create vertex library");
+        return 0;
+    }
+    defer release(vertex_library);
+
+    // Create library from pixel shader Metal source
+    ns_pixel_source := NSString.initWithBytes(
+        objc_alloc(NSString),
+        pixel_metal.data,
+        pixel_metal.count.(NSUInteger),
+        NSUTF8StringEncoding
+    );
+    defer release(ns_pixel_source);
+
+    error = null;
+    pixel_library := MTLDevice.newLibraryWithSource(mtl_device, ns_pixel_source, compile_options, *error);
+    if error != null {
+        error_str := to_string(NSError.localizedDescription(error));
+        log_error("Failed to compile pixel shader: %", error_str);
+        return 0;
+    }
+    if pixel_library == null {
+        log_error("Failed to create pixel library");
+        return 0;
+    }
+    defer release(pixel_library);
+
+    // Get vertex function - try various names (Slang may rename "main" to "main_0")
+    vertex_function := get_function_from_library(vertex_library, "vertexMain");
+    if vertex_function == null {
+        vertex_function = get_function_from_library(vertex_library, "vertexMain_0");
+    }
+    if vertex_function == null {
+        vertex_function = get_function_from_library(vertex_library, "main");
+    }
+    if vertex_function == null {
+        vertex_function = get_function_from_library(vertex_library, "main_0");
+    }
+    if vertex_function == null {
+        log_error("Failed to find vertex function in shader");
+        return 0;
+    }
+    defer release(vertex_function);
+
+    // Get fragment function - try various names (Slang may rename "main" to "main_0")
+    fragment_function := get_function_from_library(pixel_library, "fragmentMain");
+    if fragment_function == null {
+        fragment_function = get_function_from_library(pixel_library, "fragmentMain_0");
+    }
+    if fragment_function == null {
+        fragment_function = get_function_from_library(pixel_library, "main");
+    }
+    if fragment_function == null {
+        fragment_function = get_function_from_library(pixel_library, "main_0");
+    }
+    if fragment_function == null {
+        log_error("Failed to find fragment function in shader");
+        return 0;
+    }
+    defer release(fragment_function);
+
+    // Create MTL4 render pipeline descriptor
+    pipeline_desc := objc_new(MTL4RenderPipelineDescriptor);
+    defer release(pipeline_desc);
+
+    // Create function descriptors for MTL4
+    vertex_func_desc := objc_new(MTL4LibraryFunctionDescriptor);
+    defer release(vertex_func_desc);
+    MTL4LibraryFunctionDescriptor.setLibrary(vertex_func_desc, vertex_library);
+    {
+        name := get_function_name(vertex_function);
+        MTL4LibraryFunctionDescriptor.setName(vertex_func_desc, name);
+    }
+
+    fragment_func_desc := objc_new(MTL4LibraryFunctionDescriptor);
+    defer release(fragment_func_desc);
+    MTL4LibraryFunctionDescriptor.setLibrary(fragment_func_desc, pixel_library);
+    {
+        name := get_function_name(fragment_function);
+        MTL4LibraryFunctionDescriptor.setName(fragment_func_desc, name);
+    }
+
+    MTL4RenderPipelineDescriptor.setVertexFunctionDescriptor(pipeline_desc, vertex_func_desc);
+    MTL4RenderPipelineDescriptor.setFragmentFunctionDescriptor(pipeline_desc, fragment_func_desc);
+
+    // Configure color attachments
+    color_attachments := MTL4RenderPipelineDescriptor.colorAttachments(pipeline_desc);
+
+    for raster_desc.color_targets {
+        color_attachment := MTL4RenderPipelineColorAttachmentDescriptorArray.objectAtIndexedSubscript(color_attachments, it_index.(NSUInteger));
+
+        MTL4RenderPipelineColorAttachmentDescriptor.setPixelFormat(color_attachment, format_to_mtl(it.format));
+
+        // Configure blending if we have a blend state
+        if raster_desc.blend_state != null {
+            blend := raster_desc.blend_state;
+
+            // Enable blending if any factor is not the default
+            if blend.src_color_factor != .ZERO || blend.dst_color_factor != .ZERO {
+                MTL4RenderPipelineColorAttachmentDescriptor.setBlendingState(color_attachment, .Enabled);
+
+                MTL4RenderPipelineColorAttachmentDescriptor.setSourceRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_color_factor));
+                MTL4RenderPipelineColorAttachmentDescriptor.setDestinationRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_color_factor));
+                MTL4RenderPipelineColorAttachmentDescriptor.setRgbBlendOperation(color_attachment, blend_op_to_mtl(blend.color_op));
+
+                MTL4RenderPipelineColorAttachmentDescriptor.setSourceAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_alpha_factor));
+                MTL4RenderPipelineColorAttachmentDescriptor.setDestinationAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_alpha_factor));
+                MTL4RenderPipelineColorAttachmentDescriptor.setAlphaBlendOperation(color_attachment, blend_op_to_mtl(blend.alpha_op));
+            }
+
+            // Set write mask
+            MTL4RenderPipelineColorAttachmentDescriptor.setWriteMask(color_attachment, color_write_mask_to_mtl(blend.color_write_mask));
+        }
+    }
+
+    // Set sample count
+    if raster_desc.sample_count > 0 {
+        MTL4RenderPipelineDescriptor.setRasterSampleCount(pipeline_desc, raster_desc.sample_count.(NSUInteger));
+    }
+
+    // Create the compiler and pipeline state
+    compiler_desc := objc_new(MTL4CompilerDescriptor);
+    defer release(compiler_desc);
+
+    error = null;
+    compiler := MTLDevice.newCompilerWithDescriptor(mtl_device, compiler_desc, *error);
+    if error != null || compiler == null {
+        if error != null {
+            error_str := to_string(NSError.localizedDescription(error));
+            log_error("Failed to create compiler: %", error_str);
+        }
+        return 0;
+    }
+    defer release(compiler);
+
+    // Create compiler task options (can be null for default options)
+    task_options: *MTL4CompilerTaskOptions = null;
+
+    error = null;
+    // Cast pipeline_desc to base type MTL4PipelineDescriptor
+    render_pipeline := MTL4Compiler.newRenderPipelineStateWithDescriptor(compiler, cast(*MTL4PipelineDescriptor) pipeline_desc, task_options, *error);
+    if error != null {
+        error_str := to_string(NSError.localizedDescription(error));
+        log_error("Failed to create render pipeline: %", error_str);
+        return 0;
+    }
+    if render_pipeline == null {
+        log_error("Failed to create render pipeline state");
+        return 0;
+    }
+
+    handle := pool_add(*live_pipelines, .{
+        type = .GRAPHICS,
+        mtl_compute_pipeline = null,
+        mtl_render_pipeline = render_pipeline,
+    });
+
+    return handle;
+}
+
 gpu_free_pipeline :: (pipeline_handle: Gpu_Pipeline) {
     removed, pipeline := pool_remove(*live_pipelines, pipeline_handle);
     if removed {
@@ -99,19 +283,6 @@ gpu_free_pipeline :: (pipeline_handle: Gpu_Pipeline) {
     }
 }
 
-gpu_set_pipeline :: (cmd: Gpu_Command_Buffer, pipeline_handle: Gpu_Pipeline) -> Gpu_Result {
-    cmd_info := get_cmd_info(cmd);
-    if cmd_info == null then return .ERROR_INVALID_BUFFER;
-
-    pipeline := pool_get(live_pipelines, pipeline_handle);
-    if pipeline == null then return .ERROR_INVALID_PIPELINE;
-
-    // Store the current pipeline in the command buffer info for later use during dispatch
-    cmd_info.current_pipeline = pipeline_handle;
-
-    return .SUCCESS;
-}
-
 gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     cmd_info := get_cmd_info(cmd);
     if cmd_info == null then return;
@@ -122,46 +293,28 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     queue := get_queue(cmd_info.queue);
     if queue == null || queue.mtl4_queue == null then return;
 
-    // End any existing blit encoder before starting compute
-    end_current_encoder(cmd_info);
+    // End any existing render encoder before starting compute
+    end_current_render_encoder(cmd_info);
+
+    // Ensure compute encoder exists
+    compute_encoder := ensure_compute_encoder(cmd_info);
+    if compute_encoder == null then return;
 
     // Ensure bindless argument table is initialized
     if global_argument_table == null {
         init_bindless();
     }
 
-    // For MTL4 bindless features, create a command allocator and command buffer
-    allocator := MTLDevice.newCommandAllocator(mtl_device);
-    if allocator == null then return;
-    defer release(allocator);
-
-    mtl4_cmd_buffer := MTLDevice.newCommandBuffer(mtl_device);
-    if mtl4_cmd_buffer == null then return;
-
-    // Begin the command buffer with the allocator
-    MTL4CommandBuffer.beginCommandBufferWithAllocator(mtl4_cmd_buffer, allocator);
-
-    // Create MTL4 compute encoder
-    compute_encoder := MTL4CommandBuffer.computeCommandEncoder(mtl4_cmd_buffer);
-    if compute_encoder == null {
-        release(mtl4_cmd_buffer);
-        return;
-    }
-
-    // Cast to MTL4ComputeCommandEncoder for MTL4-specific methods
-    mtl4_encoder := cast(*MTL4ComputeCommandEncoder) compute_encoder;
-
     // Set the pipeline state
-    MTL4ComputeCommandEncoder.setComputePipelineState(mtl4_encoder, pipeline.mtl_compute_pipeline);
+    MTL4ComputeCommandEncoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
 
     // Set the buffer address in the argument table at index 0
     MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) data, 0);
 
     // Bind the argument table to the encoder
-    MTL4ComputeCommandEncoder.setArgumentTable(mtl4_encoder, global_argument_table);
+    MTL4ComputeCommandEncoder.setArgumentTable(compute_encoder, global_argument_table);
 
     // Get thread execution width and calculate threads per threadgroup
-    thread_execution_width := MTLComputePipelineState.threadExecutionWidth(pipeline.mtl_compute_pipeline);
     max_threads := MTLComputePipelineState.maxTotalThreadsPerThreadgroup(pipeline.mtl_compute_pipeline);
 
     // Use a reasonable threadgroup size (typically 64 for compute shaders)
@@ -177,30 +330,7 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
         depth = dimensions[2].(NSUInteger)
     };
 
-    MTL4ComputeCommandEncoder.dispatchThreadgroups(mtl4_encoder, threadgroups, threads_per_group);
-
-    // End the command buffer recording
-    MTL4CommandEncoder.endEncoding(cast(*MTL4CommandEncoder) mtl4_encoder);
-    MTL4CommandBuffer.endCommandBuffer(mtl4_cmd_buffer);
-
-    // Submit the MTL4 command buffer through the MTL4 queue
-    cmd_buffers: [1] *MTL4CommandBuffer;
-    cmd_buffers[0] = mtl4_cmd_buffer;
-    MTL4CommandQueue.commit(queue.mtl4_queue, cmd_buffers.data, 1);
-
-    // Wait for the MTL4 queue to finish (synchronous for now)
-    // We can use an MTLSharedEvent for proper synchronization
-    event := MTLDevice.newSharedEvent(mtl_device);
-    if event != null {
-        defer release(event);
-
-        // Signal the event after the command buffer completes
-        signal_value := cast(u64) 1;
-        MTL4CommandQueue.signalEvent(queue.mtl4_queue, event, signal_value);
-
-        // Wait for the event on the CPU
-        MTLSharedEvent.notifyListener(event, null, signal_value, null);  // Synchronous wait
-    }
+    MTL4ComputeCommandEncoder.dispatchThreadgroups(compute_encoder, threadgroups, threads_per_group);
 }
 
 #scope_module
@@ -230,6 +360,64 @@ live_pipelines: Pool(Gpu_Pipeline, Pipeline);
 
 get_pipeline :: (handle: Gpu_Pipeline) -> *Pipeline {
     return pool_get(live_pipelines, handle);
+}
+
+get_function_from_library :: (library: *MTLLibrary, name: string) -> *MTLFunction {
+    ns_name := NSString.initWithBytes(
+        objc_alloc(NSString),
+        name.data,
+        name.count.(NSUInteger),
+        NSUTF8StringEncoding
+    );
+    defer release(ns_name);
+
+    return MTLLibrary.newFunctionWithName(library, ns_name);
+}
+
+get_function_name :: (func: *MTLFunction) -> *NSString {
+    return MTLFunction.name(func);
+}
+
+blend_factor_to_mtl :: (factor: Factor) -> MTLBlendFactor {
+    if factor == {
+        case .ZERO;                     return .Zero;
+        case .ONE;                      return .One;
+        case .SRC_COLOR;                return .SourceColor;
+        case .ONE_MINUS_SRC_COLOR;      return .OneMinusSourceColor;
+        case .DST_COLOR;                return .DestinationColor;
+        case .ONE_MINUS_DST_COLOR;      return .OneMinusDestinationColor;
+        case .SRC_ALPHA;                return .SourceAlpha;
+        case .ONE_MINUS_SRC_ALPHA;      return .OneMinusSourceAlpha;
+        case .DST_ALPHA;                return .DestinationAlpha;
+        case .ONE_MINUS_DST_ALPHA;      return .OneMinusDestinationAlpha;
+        case .CONSTANT_COLOR;           return .BlendColor;
+        case .ONE_MINUS_CONSTANT_COLOR; return .OneMinusBlendColor;
+        case .CONSTANT_ALPHA;           return .BlendAlpha;
+        case .ONE_MINUS_CONSTANT_ALPHA; return .OneMinusBlendAlpha;
+        case .SRC_ALPHA_SATURATE;       return .SourceAlphaSaturated;
+    }
+    return .Zero;
+}
+
+blend_op_to_mtl :: (op: Blend) -> MTLBlendOperation {
+    if op == {
+        case .ADD;          return .Add;
+        case .SUBTRACT;     return .Subtract;
+        case .REV_SUBTRACT; return .ReverseSubtract;
+        case .MIN;          return .Min;
+        case .MAX;          return .Max;
+    }
+    return .Add;
+}
+
+color_write_mask_to_mtl :: (mask: Component_Flags) -> MTLColorWriteMask {
+    result: MTLColorWriteMask = 0;
+    if mask & .R then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Red;
+    if mask & .G then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Green;
+    if mask & .B then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Blue;
+    if mask & .A then result |= cast(MTLColorWriteMask) MTLColorWriteMask_1.Alpha;
+    if mask == .ALL then result = cast(MTLColorWriteMask) MTLColorWriteMask_1.All;
+    return result;
 }
 
 NSUTF8StringEncoding :: 4;

@@ -1,11 +1,9 @@
 #scope_export
 
-compile_shader :: (shader_path: string, output_directory: string = "", debug_symbols: bool = false) -> bool, string {
+compile_shader :: (shader_path: string, write_output: bool = false, debug_symbols: bool = false) -> bool, string {
     if !global_session then create_session();
 
     auto_release_temp();
-
-    filename := shader_path;
 
     options: [..] slang.CompilerOptionEntry;
     options.allocator = temp;
@@ -119,8 +117,9 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
     // Copy to a new allocation since the blob will be released
     result := copy_string(metal_source);
 
-    if output_directory {
-        output_path := tprint("%/%.metal", output_directory, path_strip_extension(path_filename(filename)));
+    if write_output {
+        output_directory := path_strip_filename(shader_path);
+        output_path := tprint("%/%.generated.metal", output_directory, path_strip_extension(path_filename(shader_path)));
         write_entire_file(output_path, result);
     }
 

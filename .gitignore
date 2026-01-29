@@ -6,3 +6,7 @@ examples/02_compute
 modules/Metal/generate
 modules/Metal/examples/sdl_metal
 examples/shadertoy/shadertoy
+xcode/sgpu_metal/sgpu_metal.xcodeproj/project.xcworkspace/xcuserdata
+*.xcuserdatad/
+examples/03_hello_square
+*.generated.metal

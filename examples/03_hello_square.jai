@@ -1,4 +1,11 @@
+WRITE_SHADER_OUTPUT :: true;
+
 main :: () {
+    // Check for -singleframe argument for automated testing
+    args_ok, args, is_set := parse_arguments(struct { singleframe: bool; });
+    singleframe := args_ok && is_set.singleframe;
+    max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
+
     result := gpu_init();
     assert(result == .SUCCESS);
     defer gpu_shutdown();
@@ -16,10 +23,8 @@ main :: () {
 
     main_queue := gpu_get_queue(.MAIN, 0);
 
-    success, vertex_spv := compile_shader("../shaders/hello_square_vs.slang");
-    assert(success);
-    success=, pixel_spv := compile_shader("../shaders/hello_square_ps.slang");
-    assert(success);
+    success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
+    success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
 
     blend_state: Gpu_Blend_Desc;
     raster_desc := Gpu_Raster_Desc.{
@@ -73,8 +78,9 @@ main :: () {
     pixel_data, pixel_gpu := gpu_arena_alloc(*gpu_arena, [3] float);
     pixel_data.* = .[1., 0., 1.];
 
+    frame_count: s64 = 0;
     quit := false;
-    while !quit {
+    while !quit && frame_count < max_frames {
         update_window_events();
         for events_this_frame {
             if it.type == .QUIT then quit = true;
@@ -86,6 +92,7 @@ main :: () {
         result=, swapchain_image := gpu_swapchain_acquire();
         assert(result == .SUCCESS);
         if !swapchain_image {
+            log("No swapchain image available");
             continue;
         }
 
@@ -105,20 +112,25 @@ main :: () {
             gpu_begin_render_pass(cmd_buff, render_desc);
             gpu_set_depth_stencil_state(cmd_buff, depth_desc);
 
-            gpu_set_pipeline(cmd_buff, graphics_pipeline);
+            res := gpu_set_pipeline(cmd_buff, graphics_pipeline);
+            assert(res == .SUCCESS);
 
-            gpu_draw_indexed_instanced(cmd_buff, vertex_params_gpu, pixel_gpu, index_gpu, 6, 1);
+            res = gpu_draw_indexed_instanced(cmd_buff, vertex_params_gpu, pixel_gpu, index_gpu, 6, 1);
+            assert(res == .SUCCESS);
 
             gpu_end_render_pass(cmd_buff);
         }
 
         gpu_submit_and_present(cmd_buff);
+        frame_count += 1;
     }
 
     gpu_wait_idle();
+    print("OK!\n");
 }
 
 #import,file "../module.jai"(VALIDATION = true);
 #import "Basic";
 #import "Input";
+#import "Command_Line";
 #load "utils/window.jai";
