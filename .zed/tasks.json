@@ -9,6 +9,6 @@
   },
   {
     "label": "03_hello_square",
-    "command": "cd examples && jai -quiet 03_hello_square.jai +Autorun",
+    "command": "cd examples && MTL_DEBUG_LAYER=1 jai -quiet 03_hello_square.jai +Autorun",
   },
 ]

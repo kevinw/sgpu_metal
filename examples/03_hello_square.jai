@@ -78,6 +78,8 @@ main :: () {
     pixel_data, pixel_gpu := gpu_arena_alloc(*gpu_arena, [3] float);
     pixel_data.* = .[1., 0., 1.];
 
+    gpu_commit_residency();
+
     frame_count: s64 = 0;
     quit := false;
     while !quit && frame_count < max_frames {
@@ -123,13 +125,14 @@ main :: () {
 
         gpu_submit_and_present(cmd_buff);
         frame_count += 1;
+        gpu_wait_idle(); /// XXX do max frames in flight and semaphores and remove this.
     }
 
     gpu_wait_idle();
     print("OK!\n");
 }
 
-#import,file "../module.jai"(VALIDATION = true);
+#import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true);
 #import "Basic";
 #import "Input";
 #import "Command_Line";
