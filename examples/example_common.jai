@@ -3,18 +3,17 @@ EXTRA_CHECKS :: true;
 #if EXTRA_CHECKS {
     Debug :: #import "Debug";
 
-    example_debug_harness :: () #expand {
-        #if EXTRA_CHECKS {
-            Debug.init();
-            `defer {
-                has_leaks := false;
-                has_leaks |= show_jai_mem_leaks();
-                has_leaks |= gpu_log_memory_leaks();
-                if has_leaks {
-                    exit(1);
-                }
-            }
-            // TODO: exit with code 1 if there are any leaks.
+    gpu_example_harness :: () #expand {
+        Debug.init();
+        `defer exit_with_error_on_memory_leak();
+    }
+
+    exit_with_error_on_memory_leak :: () {
+        has_leaks := false;
+        has_leaks |= show_jai_mem_leaks();
+        has_leaks |= gpu_log_memory_leaks();
+        if has_leaks {
+            exit(1);
         }
     }
 
@@ -29,7 +28,10 @@ EXTRA_CHECKS :: true;
         }
         return has_leaks;
     }
+} else {
+    example_debug_harness :: () #expand {}
 }
+
 
 #import "Basic"()(
     MEMORY_DEBUGGER=EXTRA_CHECKS,

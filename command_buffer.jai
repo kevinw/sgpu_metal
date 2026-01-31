@@ -423,8 +423,8 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
     index_buffer_address := cast(MTLGPUAddress) index_data;
     index_buffer_length := (index_count * index_size).(NSUInteger);
 
-    log("index_count % - index_type % - index_buffer_address % - index_buffer_length % - instance_count %",
-        index_count, index_type, index_buffer_address, index_buffer_length, instance_count);
+    //log("index_count % - index_type % - index_buffer_address % - index_buffer_length % - instance_count %",
+        //index_count, index_type, index_buffer_address, index_buffer_length, instance_count);
 
     MTL4RenderCommandEncoder.drawIndexedPrimitives(
         cmd_info.current_render_encoder,

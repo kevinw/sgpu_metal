@@ -1,5 +1,5 @@
 main :: () {
-    example_debug_harness();
+    gpu_example_harness();
 
     result := gpu_init();
     defer gpu_shutdown();

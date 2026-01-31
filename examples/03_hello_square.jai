@@ -1,6 +1,8 @@
 WRITE_SHADER_OUTPUT :: true;
 
 main :: () {
+    gpu_example_harness();
+
     // Check for -singleframe argument for automated testing
     args_ok, args, is_set := parse_arguments(struct { singleframe: bool; });
     singleframe := args_ok && is_set.singleframe;
@@ -24,7 +26,11 @@ main :: () {
     main_queue := gpu_get_queue(.MAIN, 0);
 
     success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
+    assert(success);
+    defer free(vertex_spv);
     success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
+    assert(success);
+    defer free(pixel_spv);
 
     blend_state: Gpu_Blend_Desc;
     raster_desc := Gpu_Raster_Desc.{
@@ -133,7 +139,7 @@ main :: () {
 }
 
 #import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true);
-#import "Basic";
+#load "example_common.jai";
 #import "Input";
 #import "Command_Line";
 #load "utils/window.jai";

@@ -1,4 +1,6 @@
 main :: () {
+    gpu_example_harness();
+
     result := gpu_init();
     defer gpu_shutdown();
     assert(result == .SUCCESS);
@@ -16,6 +18,8 @@ main :: () {
     // Compile Slang shader to Metal with MTL4 argument table bindless support
     // The Slang shader uses preprocessor directives to generate Metal-compatible code
     success, compiled_shader := compile_shader("shaders/compute.slang"); assert(success, "Failed to compile shader");
+    defer if compiled_shader free(compiled_shader);
+
     pipeline := gpu_create_compute_pipeline(compiled_shader);
     defer gpu_free_pipeline(pipeline);
 
@@ -52,4 +56,4 @@ main :: () {
 }
 
 #import,file "../module.jai"(VALIDATION = true, SLANG_COMPILER = true);
-#import "Basic";
+#load "example_common.jai";
