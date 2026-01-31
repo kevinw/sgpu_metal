@@ -4,7 +4,7 @@
 gpu_commit_residency :: () {
     assert(global_residency_set != null);
     MTLResidencySet.commit(global_residency_set);
-    print("committed residency set (size=%)", global_residency_set.allocatedSize(global_residency_set));
+    print("committed residency set (size=%)\n", global_residency_set.allocatedSize(global_residency_set));
 }
 
 #scope_module

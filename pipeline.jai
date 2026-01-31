@@ -16,10 +16,12 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
 
     error: *NSError;
+
     mtl_library := MTLDevice.newLibraryWithSource(mtl_device, ns_source, compile_options, *error);
+    defer if mtl_library release(mtl_library);
+
     if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to compile Metal shader: %", error_str);
+        log_error("Failed to compile Metal shader: %", to_string(NSError.localizedDescription(error)));
         return 0;
     }
     if mtl_library == null {
@@ -30,31 +32,23 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     // Get the entry point function from the library
     // Try "computeMain" first (our convention), then fall back to "main"
     function_name := "computeMain";
-    main_name := NSString.initWithBytes(
-        objc_alloc(NSString),
-        function_name.data,
-        function_name.count.(NSUInteger),
-        NSUTF8StringEncoding
-    );
+
+    main_name := NSString.initWithBytes(objc_alloc(NSString), function_name.data, function_name.count.(NSUInteger), NSUTF8StringEncoding);
     defer release(main_name);
 
     mtl_function := MTLLibrary.newFunctionWithName(mtl_library, main_name);
+    defer if mtl_function then release(mtl_function);
 
     // If computeMain not found, try "main"
     if mtl_function == null {
-        release(main_name);
         function_name = "main";
-        main_name = NSString.initWithBytes(
-            objc_alloc(NSString),
-            function_name.data,
-            function_name.count.(NSUInteger),
-            NSUTF8StringEncoding
-        );
+        release(main_name);
+        main_name = NSString.initWithBytes(objc_alloc(NSString), function_name.data, function_name.count.(NSUInteger), NSUTF8StringEncoding);
         mtl_function = MTLLibrary.newFunctionWithName(mtl_library, main_name);
     }
+
     if mtl_function == null {
         log_error("Failed to find 'main' function in Metal shader");
-        release(mtl_library);
         return 0;
     }
 
@@ -63,28 +57,18 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     if error != null {
         error_str := to_string(NSError.localizedDescription(error));
         log_error("Failed to create compute pipeline: %", error_str);
-        release(mtl_function);
-        release(mtl_library);
         return 0;
     }
+
     if mtl_pipeline == null {
         log_error("Failed to create compute pipeline state");
-        release(mtl_function);
-        release(mtl_library);
         return 0;
     }
 
-    // We can release the function and library now - the pipeline state retains what it needs
-    release(mtl_function);
-    release(mtl_library);
-
-    handle := pool_add(*live_pipelines, .{
+    return pool_add(*live_pipelines, {
         type = .COMPUTE,
-        mtl_compute_pipeline = mtl_pipeline,
-        mtl_render_pipeline = null,
+        mtl_compute_pipeline = mtl_pipeline
     });
-
-    return handle;
 }
 
 gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
@@ -208,21 +192,23 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
         if raster_desc.blend_state != null {
             blend := raster_desc.blend_state;
 
+            using color_attachment;
+
             // Enable blending if any factor is not the default
             if blend.src_color_factor != .ZERO || blend.dst_color_factor != .ZERO {
-                MTL4RenderPipelineColorAttachmentDescriptor.setBlendingState(color_attachment, .Enabled);
+                setBlendingState(color_attachment, .Enabled);
 
-                MTL4RenderPipelineColorAttachmentDescriptor.setSourceRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_color_factor));
-                MTL4RenderPipelineColorAttachmentDescriptor.setDestinationRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_color_factor));
-                MTL4RenderPipelineColorAttachmentDescriptor.setRgbBlendOperation(color_attachment, blend_op_to_mtl(blend.color_op));
+                setSourceRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_color_factor));
+                setDestinationRGBBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_color_factor));
+                setRgbBlendOperation(color_attachment, blend_op_to_mtl(blend.color_op));
 
-                MTL4RenderPipelineColorAttachmentDescriptor.setSourceAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_alpha_factor));
-                MTL4RenderPipelineColorAttachmentDescriptor.setDestinationAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_alpha_factor));
-                MTL4RenderPipelineColorAttachmentDescriptor.setAlphaBlendOperation(color_attachment, blend_op_to_mtl(blend.alpha_op));
+                setSourceAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.src_alpha_factor));
+                setDestinationAlphaBlendFactor(color_attachment, blend_factor_to_mtl(blend.dst_alpha_factor));
+                setAlphaBlendOperation(color_attachment, blend_op_to_mtl(blend.alpha_op));
             }
 
             // Set write mask
-            MTL4RenderPipelineColorAttachmentDescriptor.setWriteMask(color_attachment, color_write_mask_to_mtl(blend.color_write_mask));
+            setWriteMask(color_attachment, color_write_mask_to_mtl(blend.color_write_mask));
         }
     }
 
@@ -250,13 +236,15 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     task_options: *MTL4CompilerTaskOptions = null;
 
     error = null;
+
     // Cast pipeline_desc to base type MTL4PipelineDescriptor
-    render_pipeline := MTL4Compiler.newRenderPipelineStateWithDescriptor(compiler, cast(*MTL4PipelineDescriptor) pipeline_desc, task_options, *error);
+    render_pipeline := MTL4Compiler.newRenderPipelineStateWithDescriptor(compiler, pipeline_desc, task_options, *error);
     if error != null {
         error_str := to_string(NSError.localizedDescription(error));
         log_error("Failed to create render pipeline: %", error_str);
         return 0;
     }
+
     if render_pipeline == null {
         log_error("Failed to create render pipeline state");
         return 0;
@@ -274,19 +262,22 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
 
 gpu_free_pipeline :: (pipeline_handle: Gpu_Pipeline) {
     removed, pipeline := pool_remove(*live_pipelines, pipeline_handle);
-    if removed {
-        if pipeline.mtl_compute_pipeline != null {
-            release(pipeline.mtl_compute_pipeline);
-        }
-        if pipeline.mtl_render_pipeline != null {
-            release(pipeline.mtl_render_pipeline);
-        }
+    if !removed return;
+
+    using pipeline;
+    if mtl_compute_pipeline != null {
+        release(mtl_compute_pipeline);
+        mtl_compute_pipeline = null;
+    }
+    if mtl_render_pipeline != null {
+        release(mtl_render_pipeline);
+        mtl_compute_pipeline = null;
     }
 }
 
 gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     cmd_info := get_cmd_info(cmd);
-    if cmd_info == null then return;
+    if cmd_info == null return;
 
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
     return_if(pipeline == null, tprint("gpu_dispatch: no pipeline for %", cmd_info.current_pipeline));
@@ -365,14 +356,8 @@ get_pipeline :: (handle: Gpu_Pipeline) -> *Pipeline {
 }
 
 get_function_from_library :: (library: *MTLLibrary, name: string) -> *MTLFunction {
-    ns_name := NSString.initWithBytes(
-        objc_alloc(NSString),
-        name.data,
-        name.count.(NSUInteger),
-        NSUTF8StringEncoding
-    );
+    ns_name := NSString.initWithBytes(objc_alloc(NSString), name.data, name.count.(NSUInteger), NSUTF8StringEncoding);
     defer release(ns_name);
-
     return MTLLibrary.newFunctionWithName(library, ns_name);
 }
 
