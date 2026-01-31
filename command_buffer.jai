@@ -12,9 +12,7 @@ gpu_get_queue :: (queue_type: Gpu_Queue_Type, queue_index: u32) -> Gpu_Queue {
 
 gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Command_Buffer {
     queue := get_queue(queue_handle);
-    if queue == null {
-        return .FATAL_ERROR_UNKNOWN, 0;
-    }
+    if queue == null return .FATAL_ERROR_UNKNOWN, 0;
 
     // Create MTL4 command allocator and command buffer
     mtl4_allocator := MTLDevice.newCommandAllocator(mtl_device);
@@ -32,12 +30,11 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     MTL4CommandBuffer.beginCommandBufferWithAllocator(mtl4_cmd_buffer, mtl4_allocator);
 
     // Store the command buffer info
-    cmd_info: Command_Buffer_Info;
-    cmd_info.mtl4_cmd_buffer = mtl4_cmd_buffer;
-    cmd_info.mtl4_allocator = mtl4_allocator;
-    cmd_info.queue = queue_handle;
-    cmd_info.current_compute_encoder = null;
-    cmd_info.current_render_encoder = null;
+    cmd_info: Command_Buffer_Info = {
+        mtl4_cmd_buffer = mtl4_cmd_buffer,
+        mtl4_allocator = mtl4_allocator,
+        queue = queue_handle,
+    };
 
     // Find an empty slot in live command buffers
     found_slot := false;
@@ -63,20 +60,20 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
 
 gpu_memcpy :: (cmd: Gpu_Command_Buffer, dest: Gpu_Ptr, src: Gpu_Ptr, num_bytes: s64) -> Gpu_Result {
     cmd_info := get_cmd_info(cmd);
-    if cmd_info == null then return .ERROR_INVALID_BUFFER;
+    if cmd_info == null return .ERROR_INVALID_BUFFER;
 
     dest_result, dest_buffer, dest_offset := get_buffer_and_offset(dest);
-    if dest_result != .SUCCESS then return dest_result;
+    if dest_result != .SUCCESS return dest_result;
 
     src_result, src_buffer, src_offset := get_buffer_and_offset(src);
-    if src_result != .SUCCESS then return src_result;
+    if src_result != .SUCCESS return src_result;
 
     // End any render encoder before starting compute/blit
     end_current_render_encoder(cmd_info);
 
     // Get or create the MTL4 compute encoder (handles blit operations in Metal 4)
     compute_encoder := ensure_compute_encoder(cmd_info);
-    if compute_encoder == null then return .FATAL_ERROR_UNKNOWN;
+    if compute_encoder == null return .FATAL_ERROR_UNKNOWN;
 
     // Perform the copy using MTL4ComputeCommandEncoder
     MTL4ComputeCommandEncoder.copyFromBuffer(
@@ -92,16 +89,12 @@ gpu_memcpy :: (cmd: Gpu_Command_Buffer, dest: Gpu_Ptr, src: Gpu_Ptr, num_bytes: 
 }
 
 gpu_barrier :: (cmd: Gpu_Command_Buffer, src_stage: Stage, dst_stage: Stage) {
-    cmd_info := get_cmd_info(cmd);
+    using cmd_info := get_cmd_info(cmd);
     if cmd_info == null then return;
 
     // In Metal 4, barriers are handled by ending and starting new encoders
-    if cmd_info.current_compute_encoder != null {
-        end_current_encoder(cmd_info);
-    }
-    if cmd_info.current_render_encoder != null {
-        end_current_render_encoder(cmd_info);
-    }
+    if current_compute_encoder != null  end_current_compute_encoder(cmd_info);
+    if current_render_encoder != null   end_current_render_encoder(cmd_info);
 }
 
 gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[], waits: [] Gpu_Timeline_Pair = .[]) {
@@ -112,7 +105,7 @@ gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[]
     if queue == null then return;
 
     // End any active encoder
-    end_current_encoder(cmd_info);
+    end_current_compute_encoder(cmd_info);
     end_current_render_encoder(cmd_info);
 
     // End the command buffer recording
@@ -149,14 +142,14 @@ gpu_wait_idle :: () {
 
     // Clear all command buffer slots and release allocators
     for * live_command_buffers {
-        if it.mtl4_cmd_buffer != null {
-            release(it.mtl4_cmd_buffer);
-            it.mtl4_cmd_buffer = null;
-        }
-        if it.mtl4_allocator != null {
-            release(it.mtl4_allocator);
-            it.mtl4_allocator = null;
-        }
+        release_and_set_null(*it.mtl4_cmd_buffer);
+        release_and_set_null(*it.mtl4_allocator);
+
+        if it.current_compute_encoder log("WARNING: current_compute_encoder is not null, but we called gpu_wait_idle");
+        if it.current_render_encoder  log("WARNING: current_render_encoder is not null, but we called gpu_wait_idle");
+
+        // TODO: @Leak?
+
         it.current_compute_encoder = null;
         it.current_render_encoder = null;
     }
@@ -183,12 +176,8 @@ gpu_queue_wait_idle :: (queue_handle: Gpu_Queue) {
     // Clear command buffer slots for this queue and release allocators
     for * live_command_buffers {
         if it.mtl4_cmd_buffer != null && it.queue == queue_handle {
-            release(it.mtl4_cmd_buffer);
-            it.mtl4_cmd_buffer = null;
-            if it.mtl4_allocator != null {
-                release(it.mtl4_allocator);
-                it.mtl4_allocator = null;
-            }
+            release_and_set_null(it.mtl4_cmd_buffer);
+            release_and_set_null(*it.mtl4_allocator);
             it.current_compute_encoder = null;
             it.current_render_encoder = null;
         }
@@ -204,12 +193,12 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     if cmd_info == null then return .ERROR_INVALID_BUFFER;
 
     // End any active compute encoder before starting render
-    end_current_encoder(cmd_info);
+    end_current_compute_encoder(cmd_info);
 
     auto_release_temp();
 
     // Create MTL4 render pass descriptor
-    pass_desc := objc_new(MTL4RenderPassDescriptor);
+    pass_desc := objc_new_defer_release(MTL4RenderPassDescriptor);
 
     // Configure color attachments
     color_attachments := MTL4RenderPassDescriptor.colorAttachments(pass_desc);
@@ -219,10 +208,7 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
 
     for desc.color_targets {
         view := get_texture_view(it.view);
-        if view == null {
-            release(pass_desc);
-            return .ERROR_INVALID_TEXTURE;
-        }
+        if view == null return .ERROR_INVALID_TEXTURE;
 
         texture := get_texture(view.texture);
         if texture != null {
@@ -279,7 +265,6 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
 
     // Create the render command encoder
     render_encoder := MTL4CommandBuffer.renderCommandEncoderWithDescriptor(cmd_info.mtl4_cmd_buffer, pass_desc);
-    release(pass_desc);
 
     if render_encoder == null {
         return .FATAL_ERROR_UNKNOWN;
@@ -290,23 +275,15 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     cmd_info.render_height = render_height;
 
     // Set default viewport and scissor
-    viewport := MTLViewport.{
-        originX = 0,
-        originY = 0,
-        width = render_width.(float64),
-        height = render_height.(float64),
-        znear = 0,
-        zfar = 1,
-    };
-    MTL4RenderCommandEncoder.setViewport(render_encoder, viewport);
+    render_encoder.setViewport(render_encoder, {
+        originX = 0, originY = 0,
+        width = render_width.(float64), height = render_height.(float64),
+        znear = 0, zfar = 1,
+    });
 
-    scissor := MTLScissorRect.{
-        x = 0,
-        y = 0,
-        width = render_width.(NSUInteger),
-        height = render_height.(NSUInteger),
-    };
-    MTL4RenderCommandEncoder.setScissorRect(render_encoder, scissor);
+    render_encoder.setScissorRect(render_encoder, {
+        x = 0, y = 0, width = render_width.(NSUInteger), height = render_height.(NSUInteger),
+    });
 
     return .SUCCESS;
 }
@@ -319,12 +296,11 @@ gpu_end_render_pass :: (cmd: Gpu_Command_Buffer) {
 }
 
 gpu_set_depth_stencil_state :: (cmd: Gpu_Command_Buffer, desc: Gpu_Depth_Stencil_Desc) {
-    cmd_info := get_cmd_info(cmd);
+    using cmd_info := get_cmd_info(cmd);
     if cmd_info == null || cmd_info.current_render_encoder == null then return;
 
     // Create depth stencil state
-    depth_desc := objc_new(MTLDepthStencilDescriptor);
-    defer release(depth_desc);
+    depth_desc := objc_new_defer_release(MTLDepthStencilDescriptor);
 
     // Set depth compare function
     MTLDepthStencilDescriptor.setDepthCompareFunction(depth_desc, compare_op_to_mtl(desc.depth_test));
@@ -361,35 +337,35 @@ gpu_set_depth_stencil_state :: (cmd: Gpu_Command_Buffer, desc: Gpu_Depth_Stencil
 
     // Set depth bias if needed
     if desc.depth_bias != 0 || desc.depth_bias_slope_factor != 0 {
-        MTL4RenderCommandEncoder.setDepthBias(cmd_info.current_render_encoder, desc.depth_bias, desc.depth_bias_slope_factor, desc.depth_bias_clamp);
+        MTL4RenderCommandEncoder.setDepthBias(current_render_encoder, desc.depth_bias, desc.depth_bias_slope_factor, desc.depth_bias_clamp);
     }
 
     // Set stencil reference value
     if desc.stencil_front.reference != 0 || desc.stencil_back.reference != 0 {
-        MTL4RenderCommandEncoder.setStencilFrontReferenceValue(cmd_info.current_render_encoder, desc.stencil_front.reference.(u32), desc.stencil_back.reference.(u32));
+        MTL4RenderCommandEncoder.setStencilFrontReferenceValue(current_render_encoder, desc.stencil_front.reference.(u32), desc.stencil_back.reference.(u32));
     }
 }
 
 gpu_set_pipeline :: (cmd: Gpu_Command_Buffer, pipeline_handle: Gpu_Pipeline) -> Gpu_Result {
-    cmd_info := get_cmd_info(cmd);
+    using cmd_info := get_cmd_info(cmd);
     if cmd_info == null then return .ERROR_INVALID_BUFFER;
 
     pipeline := pool_get(live_pipelines, pipeline_handle);
     if pipeline == null then return .ERROR_INVALID_PIPELINE;
 
     // Store the current pipeline in the command buffer info for later use during dispatch/draw
-    cmd_info.current_pipeline = pipeline_handle;
+    current_pipeline = pipeline_handle;
 
     // Set the pipeline on the appropriate encoder
     if pipeline.type == .GRAPHICS && cmd_info.current_render_encoder != null {
         if pipeline.mtl_render_pipeline != null {
-            MTL4RenderCommandEncoder.setRenderPipelineState(cmd_info.current_render_encoder, pipeline.mtl_render_pipeline);
+            MTL4RenderCommandEncoder.setRenderPipelineState(current_render_encoder, pipeline.mtl_render_pipeline);
         } else {
             log_error("pipeline.mtl_render_pipeline is null");
         }
     } else if pipeline.type == .COMPUTE && cmd_info.current_compute_encoder != null {
         if pipeline.mtl_compute_pipeline != null {
-            MTL4ComputeCommandEncoder.setComputePipelineState(cmd_info.current_compute_encoder, pipeline.mtl_compute_pipeline);
+            MTL4ComputeCommandEncoder.setComputePipelineState(current_compute_encoder, pipeline.mtl_compute_pipeline);
         } else {
             log_error("pipeline.mtl_compute_pipeline is null");
         }
@@ -419,10 +395,16 @@ gpu_draw_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data
 
 gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data: Gpu_Ptr, index_data: Gpu_Ptr, index_count: u32, instance_count: u32, index_size: u32 = size_of(u32)) -> Gpu_Result {
     cmd_info := get_cmd_info(cmd);
-    if cmd_info == null || cmd_info.current_render_encoder == null then return .ERROR_INVALID_BUFFER;
+    if cmd_info == null || cmd_info.current_render_encoder == null {
+        log_error("gpu_draw_indexed_instanced: cmd_info or cmd_info.current_render_encoder is null");
+        return .ERROR_INVALID_BUFFER;
+    }
 
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
-    if pipeline == null || pipeline.mtl_render_pipeline == null then return .ERROR_INVALID_PIPELINE;
+    if pipeline == null || pipeline.mtl_render_pipeline == null {
+        log_error("gpu_draw_indexed_instanced: pipeline is null or pipeline.mtl_render_pipeline is null");
+        return .ERROR_INVALID_PIPELINE;
+    }
 
     // Set argument table with buffer addresses
     if global_argument_table != null {
@@ -439,6 +421,9 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
     // The index_data is already a Gpu_Ptr (GPU address), so we use it directly
     index_buffer_address := cast(MTLGPUAddress) index_data;
     index_buffer_length := (index_count * index_size).(NSUInteger);
+
+    log("index_count % - index_type % - index_buffer_address % - index_buffer_length % - instance_count %",
+        index_count, index_type, index_buffer_address, index_buffer_length, instance_count);
 
     MTL4RenderCommandEncoder.drawIndexedPrimitives(
         cmd_info.current_render_encoder,
@@ -466,15 +451,12 @@ Queue :: struct {
     type: Gpu_Queue_Type;
 }
 
-// Pre-defined queue slots
-queues: [7] Queue;
 
 init_queues :: () {
     auto_release_temp();
 
     // Create MTL4 command queues for each type
-    mtl4_desc := objc_new(MTL4CommandQueueDescriptor);
-    defer release(mtl4_desc);
+    mtl4_desc := objc_new_defer_release(MTL4CommandQueueDescriptor);
     error: *NSError = null;
 
     // MAIN queue
@@ -527,8 +509,6 @@ Command_Buffer_Info :: struct {
     render_height: u32;
 }
 
-live_command_buffers: [..] Command_Buffer_Info;
-
 get_cmd_info :: (cmd: Gpu_Command_Buffer) -> *Command_Buffer_Info {
     index := cast(s64) cmd - 1;
     if index < 0 || index >= live_command_buffers.count {
@@ -537,28 +517,30 @@ get_cmd_info :: (cmd: Gpu_Command_Buffer) -> *Command_Buffer_Info {
     return *live_command_buffers[index];
 }
 
-ensure_compute_encoder :: (cmd_info: *Command_Buffer_Info) -> *MTL4ComputeCommandEncoder {
-    if cmd_info.current_compute_encoder != null {
-        return cmd_info.current_compute_encoder;
+ensure_compute_encoder :: (using cmd_info: *Command_Buffer_Info) -> *MTL4ComputeCommandEncoder {
+    assert(cmd_info != null);
+
+    if current_compute_encoder == null {
+        current_compute_encoder = mtl4_cmd_buffer.computeCommandEncoder(mtl4_cmd_buffer);
     }
 
-    // Create a new MTL4 compute encoder (handles both compute and blit operations)
-    cmd_info.current_compute_encoder = MTL4CommandBuffer.computeCommandEncoder(cmd_info.mtl4_cmd_buffer);
-    return cmd_info.current_compute_encoder;
+    return current_compute_encoder;
 }
 
-end_current_encoder :: (cmd_info: *Command_Buffer_Info) {
-    if cmd_info.current_compute_encoder != null {
-        MTL4CommandEncoder.endEncoding(cast(*MTL4CommandEncoder) cmd_info.current_compute_encoder);
-        cmd_info.current_compute_encoder = null;
-    }
+end_current_compute_encoder :: (using cmd_info: *Command_Buffer_Info) {
+    assert(cmd_info != null);
+
+    if current_compute_encoder == null return;
+    current_compute_encoder.endEncoding(current_compute_encoder);
+    current_compute_encoder = null;
 }
 
-end_current_render_encoder :: (cmd_info: *Command_Buffer_Info) {
-    if cmd_info.current_render_encoder != null {
-        MTL4CommandEncoder.endEncoding(cast(*MTL4CommandEncoder) cmd_info.current_render_encoder);
-        cmd_info.current_render_encoder = null;
-    }
+end_current_render_encoder :: (using cmd_info: *Command_Buffer_Info) {
+    assert(cmd_info != null);
+
+    if current_render_encoder == null return;
+    current_render_encoder.endEncoding(current_render_encoder);
+    current_render_encoder = null;
 }
 
 // Helper functions for Metal enum conversions
@@ -606,3 +588,6 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
     }
     return .Keep;
 }
+
+live_command_buffers: [..] Command_Buffer_Info;
+queues: [7] Queue;

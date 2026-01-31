@@ -667,3 +667,16 @@ debug_assert :: (arg: bool, message := "", args: ..Any, loc := #caller_location)
         assert(arg, message, args, loc);
     }
 }
+
+release_and_set_null :: (p: **$T/NSObject) {
+    if p.* != null {
+        release(p.*);
+        p.* = null;
+    }
+}
+
+objc_new_defer_release :: ($type: Type) -> *type #expand {
+    obj := objc_new(type);
+    `defer release(obj);
+    return obj;
+}

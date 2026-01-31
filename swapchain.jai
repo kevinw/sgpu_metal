@@ -89,7 +89,7 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     if queue == null then return;
 
     // End any active encoder (render or compute)
-    end_current_encoder(cmd_info);
+    end_current_compute_encoder(cmd_info);
     end_current_render_encoder(cmd_info);
 
     // End the command buffer recording
