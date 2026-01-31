@@ -549,6 +549,8 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
         gpu_capture_init();
     }
 
+    global_autorelease_pool = objc_new(NSAutoreleasePool);
+
     result := create_device();
     return_if_error(result);
 
@@ -563,6 +565,9 @@ gpu_shutdown :: () {
     shutdown_bindless();
     shutdown_queues();
     shutdown_residency();
+    release_and_set_null(*mtl_device);
+    release_and_set_null(*global_autorelease_pool);
+    #if SLANG_COMPILER gpu_internal_slang_shutdown();
 }
 
 #load "pool.jai";
@@ -577,6 +582,8 @@ gpu_shutdown :: () {
 #load "sync.jai";
 #load "residency.jai";
 #if SLANG_COMPILER #load "shader_compiler.jai";
+
+global_autorelease_pool: *NSAutoreleasePool;
 
 // we remember the allocator passed into gpu_init and ensure all cpu allocations occur using that allocator.
 cpu_allocator: Allocator;

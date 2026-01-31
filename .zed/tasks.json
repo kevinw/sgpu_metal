@@ -8,7 +8,15 @@
     "command": "cd modules/Metal/examples && jai -quiet sdl_metal.jai +Autorun",
   },
   {
+    "label": "01_memory",
+    "command": "./run_example.sh 01_memory",
+  },
+  {
+    "label": "02_compute",
+    "command": "./run_example.sh 02_compute",
+  },
+  {
     "label": "03_hello_square",
-    "command": "cd examples && MTL_DEBUG_LAYER=1 jai -quiet 03_hello_square.jai +Autorun",
+    "command": "./run_example.sh 03_hello_square",
   },
 ]

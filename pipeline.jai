@@ -141,15 +141,9 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
 
     // Get fragment function - try various names (Slang may rename "main" to "main_0")
     fragment_function := get_function_from_library(pixel_library, "fragmentMain");
-    if fragment_function == null {
-        fragment_function = get_function_from_library(pixel_library, "fragmentMain_0");
-    }
-    if fragment_function == null {
-        fragment_function = get_function_from_library(pixel_library, "main");
-    }
-    if fragment_function == null {
-        fragment_function = get_function_from_library(pixel_library, "main_0");
-    }
+    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "fragmentMain_0");
+    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "main");
+    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "main_0");
     if fragment_function == null {
         log_error("Failed to find fragment function in shader");
         return 0;
@@ -177,22 +171,21 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
         MTL4LibraryFunctionDescriptor.setName(fragment_func_desc, name);
     }
 
-    MTL4RenderPipelineDescriptor.setVertexFunctionDescriptor(pipeline_desc, vertex_func_desc);
-    MTL4RenderPipelineDescriptor.setFragmentFunctionDescriptor(pipeline_desc, fragment_func_desc);
+    pipeline_desc.setVertexFunctionDescriptor(pipeline_desc, vertex_func_desc);
+    pipeline_desc.setFragmentFunctionDescriptor(pipeline_desc, fragment_func_desc);
 
     // Configure color attachments
-    color_attachments := MTL4RenderPipelineDescriptor.colorAttachments(pipeline_desc);
-
+    color_attachments := pipeline_desc.colorAttachments(pipeline_desc);
     for raster_desc.color_targets {
         color_attachment := MTL4RenderPipelineColorAttachmentDescriptorArray.objectAtIndexedSubscript(color_attachments, it_index.(NSUInteger));
 
-        MTL4RenderPipelineColorAttachmentDescriptor.setPixelFormat(color_attachment, format_to_mtl(it.format));
+        using color_attachment;
+        setPixelFormat(color_attachment, format_to_mtl(it.format));
 
         // Configure blending if we have a blend state
         if raster_desc.blend_state != null {
             blend := raster_desc.blend_state;
 
-            using color_attachment;
 
             // Enable blending if any factor is not the default
             if blend.src_color_factor != .ZERO || blend.dst_color_factor != .ZERO {
@@ -265,14 +258,8 @@ gpu_free_pipeline :: (pipeline_handle: Gpu_Pipeline) {
     if !removed return;
 
     using pipeline;
-    if mtl_compute_pipeline != null {
-        release(mtl_compute_pipeline);
-        mtl_compute_pipeline = null;
-    }
-    if mtl_render_pipeline != null {
-        release(mtl_render_pipeline);
-        mtl_compute_pipeline = null;
-    }
+    release_and_set_null(*mtl_compute_pipeline);
+    release_and_set_null(*mtl_render_pipeline);
 }
 
 gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {

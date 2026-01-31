@@ -61,6 +61,10 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
     // Wait for the next frame slot to be available
     wait_next_frame();
 
+    // Create an autorelease pool for this frame
+    release_and_set_null(*swapchain_autorelease_pool);
+    swapchain_autorelease_pool = objc_new(NSAutoreleasePool);
+
     // Get the next drawable from the layer
     current_drawable = CAMetalLayer.nextDrawable(swapchain_layer);
     if current_drawable == null {
@@ -124,6 +128,8 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
 
     // Clear the current drawable reference (Metal owns it now)
     current_drawable = null;
+
+    release_and_set_null(*swapchain_autorelease_pool);
 }
 
 gpu_present :: () {
@@ -257,6 +263,8 @@ is_kind_of_class :: (obj: id, class: Class) -> bool {
     func = xx objc_msgSend;
     return func(obj, sel, class) == YES;
 }
+
+swapchain_autorelease_pool: *NSAutoreleasePool;
 
 #import "Objective_C";
 #import "Objective_C/AppKit";

@@ -126,6 +126,10 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
     return true, result;
 }
 
+#scope_module
+
+gpu_internal_slang_shutdown :: slang.slang_shutdown;
+
 #scope_file
 
 log_diagnostic_blob :: (blob: *slang.IBlob) {
