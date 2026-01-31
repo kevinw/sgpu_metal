@@ -1,9 +1,29 @@
+LOG_ALL_ALLOCATIONS :: false;
+
 Gpu_Ptr :: #type,distinct u64;
 
 Memory_Type :: enum {
     DEFAULT;
     GPU;
     READBACK;
+}
+
+gpu_log_memory_leaks :: () -> (has_leaks: bool) {
+    has_leaks := false;
+
+    show :: (table: $H, name: string) #expand {
+        if table.count == 0 return;
+
+        if !has_leaks log("NOTE: sgpu leaks detected:");
+        log("%.count: %", name, gpu_allocations.count);
+        for table log("  %", FormatStruct.{value=it});
+        `has_leaks = true;
+    }
+
+    show(cpu_allocations, "cpu_allocations");
+    show(gpu_allocations, "gpu_allocations");
+
+    return has_leaks;
 }
 
 gpu_malloc :: ($type: Type, memory_type: Memory_Type = .DEFAULT) -> (mapped: *type, gpu: Gpu_Ptr) {
@@ -30,14 +50,15 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
     mtl_buffer := MTLDevice.newBufferWithLength(mtl_device, size.(NSUInteger), options);
     assert(mtl_buffer != null);
     if mtl_buffer == null {
+        log_error("Could not create MTLBuffer with size % and options %", size, options);
         return null, 0;
     }
 
     add_to_residency(mtl_buffer);
 
     // Get the GPU address
-    gpu_ptr := cast(Gpu_Ptr) MTLBuffer.gpuAddress(mtl_buffer);
-    print("mtl_buffer % gpu_ptr %\n", mtl_buffer, gpu_ptr);
+    gpu_ptr := cast(Gpu_Ptr) mtl_buffer.gpuAddress(mtl_buffer);
+    if LOG_ALL_ALLOCATIONS log("mtl_buffer % gpu_ptr %", mtl_buffer, gpu_ptr);
     if gpu_ptr == 0 {
         // Failed to get GPU address - this shouldn't happen on modern Metal
         // Release the buffer (Metal uses reference counting, but we created it)
@@ -46,17 +67,19 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
     }
 
     // Build allocation info
-    result: Alloc_Info;
-    result.mtl_buffer = mtl_buffer;
-    result.gpu_ptr = gpu_ptr;
-    result.type = memory_type;
-    result.size = size;
+    result: Alloc_Info = {
+        mtl_buffer = mtl_buffer,
+        gpu_ptr = gpu_ptr,
+        type = memory_type,
+        size = size,
+    };
 
     // Get CPU pointer if applicable
     mapped: *void = null;
     if memory_type != .GPU {
         mapped = MTLBuffer.contents(mtl_buffer);
         table_add(*cpu_allocations, mapped, result);
+        // log("added cpu_allocation(cpu=%, gpu=%), new cpu_allocations.count is %", mapped, gpu_ptr, cpu_allocations.count);
     }
 
     table_add(*gpu_allocations, gpu_ptr, result);
@@ -67,15 +90,19 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
 
 gpu_free :: (ptr: *void) {
     removed, alloc := table_remove(*cpu_allocations, ptr);
-    if removed {
-        release(alloc.mtl_buffer);
-
-        removed = table_remove(*gpu_allocations, alloc.gpu_ptr);
-        debug_assert(removed);
-
-        removed = remove_gpu_memory_range(alloc.gpu_ptr);
-        debug_assert(removed);
+    // log("after gpu_free(cpu=%), cpu_allocations.count is %", ptr, cpu_allocations.count);
+    if !removed {
+        log_error("gpu_free: allocation for cpu ptr % not found", ptr);
+        return;
     }
+
+    release(alloc.mtl_buffer);
+
+    removed = table_remove(*gpu_allocations, alloc.gpu_ptr);
+    debug_assert(removed);
+
+    removed = remove_gpu_memory_range(alloc.gpu_ptr);
+    debug_assert(removed);
 }
 
 gpu_free :: (gpu_ptr: Gpu_Ptr) {

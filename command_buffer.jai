@@ -123,35 +123,36 @@ gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[]
 gpu_wait_idle :: () {
     // Wait for all queues to complete using shared events
     for * queues {
-        if it.mtl4_queue != null {
-            // Create a shared event for synchronization
-            event := MTLDevice.newSharedEvent(mtl_device);
-            if event == null then continue;
-            defer release(event);
+        if it.mtl4_queue == null continue;
+        // Create a shared event for synchronization
+        event := mtl_device.newSharedEvent(mtl_device);
+        assert(event != null);
+        if event == null then continue;
+        defer release(event);
 
-            // Signal the event after all pending work
-            signal_value: u64 = 1;
-            MTL4CommandQueue.signalEvent(it.mtl4_queue, event, signal_value);
+        // Signal the event after all pending work
+        signal_value: u64 = 1;
+        it.mtl4_queue.signalEvent(it.mtl4_queue, event, signal_value);
 
-            // Spin-wait for the event to be signaled
-            while MTLSharedEvent.signaledValue(event) < signal_value {
-                // Busy wait - could add a small sleep here for efficiency
-            }
+        // Spin-wait for the event to be signaled
+        while event.signaledValue(event) < signal_value {
+            // Busy wait - could add a small sleep here for efficiency
         }
     }
 
     // Clear all command buffer slots and release allocators
     for * live_command_buffers {
-        release_and_set_null(*it.mtl4_cmd_buffer);
-        release_and_set_null(*it.mtl4_allocator);
+        using it;
 
-        if it.current_compute_encoder log("WARNING: current_compute_encoder is not null, but we called gpu_wait_idle");
-        if it.current_render_encoder  log("WARNING: current_render_encoder is not null, but we called gpu_wait_idle");
+        release_and_set_null(*mtl4_cmd_buffer);
+        release_and_set_null(*mtl4_allocator);
+
+        if current_compute_encoder log("WARNING: current_compute_encoder is not null, but we called gpu_wait_idle");
+        if current_render_encoder  log("WARNING: current_render_encoder is not null, but we called gpu_wait_idle");
 
         // TODO: @Leak?
-
-        it.current_compute_encoder = null;
-        it.current_render_encoder = null;
+        current_compute_encoder = null;
+        current_render_encoder = null;
     }
 }
 
@@ -590,4 +591,4 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
 }
 
 live_command_buffers: [..] Command_Buffer_Info;
-queues: [7] Queue;
+queues: [MAX_COMPUTE_QUEUES + MAX_TRANSFER_QUEUES + 1] Queue;

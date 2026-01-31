@@ -604,7 +604,7 @@ mtl_device: *MTLDevice;
 supports_descriptor_buffers: bool;
 
 MAX_BUFFERS  :: 5;
-MAX_IMAGES   :: 10;
+MAX_IMAGES   :: 5;
 MAX_SAMPLERS :: 5;
 
 MAX_COMPUTE_QUEUES  :: 4;
