@@ -14,15 +14,13 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     queue := get_queue(queue_handle);
     if queue == null return .FATAL_ERROR_UNKNOWN, 0;
 
-    // Create MTL4 command allocator and command buffer
-    mtl4_allocator := MTLDevice.newCommandAllocator(mtl_device);
-    if mtl4_allocator == null {
-        return .ERROR_COMMAND_BUFFER_LIMIT_EXCEEDED, 0;
-    }
+    mtl4_allocator := queue.command_allocators[frame_index % MAX_FRAMES_IN_FLIGHT];
+    assert(mtl4_allocator != null);
+    mtl4_allocator.reset(mtl4_allocator);
 
     mtl4_cmd_buffer := MTLDevice.newCommandBuffer(mtl_device);
     if mtl4_cmd_buffer == null {
-        release(mtl4_allocator);
+        log_error("Failed to create command buffer");
         return .ERROR_COMMAND_BUFFER_LIMIT_EXCEEDED, 0;
     }
 
@@ -32,7 +30,6 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     // Store the command buffer info
     cmd_info: Command_Buffer_Info = {
         mtl4_cmd_buffer = mtl4_cmd_buffer,
-        mtl4_allocator = mtl4_allocator,
         queue = queue_handle,
     };
 
@@ -51,6 +48,7 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     if !found_slot {
         slot_index = live_command_buffers.count;
         array_add(*live_command_buffers, cmd_info);
+        log("Max live command buffers %", slot_index);
     }
 
     cmd_buff_handle := cast(Gpu_Command_Buffer) (slot_index + 1);
@@ -112,9 +110,7 @@ gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[]
     MTL4CommandBuffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
 
     // Submit via MTL4 command queue
-    cmd_buffers: [1] *MTL4CommandBuffer;
-    cmd_buffers[0] = cmd_info.mtl4_cmd_buffer;
-    MTL4CommandQueue.commit(queue.mtl4_queue, cmd_buffers.data, 1);
+    MTL4CommandQueue.commit(queue.mtl4_queue, *cmd_info.mtl4_cmd_buffer, 1);
 
     // Mark slot as available (don't clear mtl4_cmd_buffer yet - we need it for wait_idle)
     // The command buffer is now owned by Metal until completion
@@ -133,11 +129,7 @@ gpu_wait_idle :: () {
         // Signal the event after all pending work
         signal_value: u64 = 1;
         it.mtl4_queue.signalEvent(it.mtl4_queue, event, signal_value);
-
-        // Spin-wait for the event to be signaled
-        while event.signaledValue(event) < signal_value {
-            // Busy wait - could add a small sleep here for efficiency
-        }
+        event.waitUntilSignaledValue(event, signal_value, milliseconds=U64_MAX);
     }
 
     // Clear all command buffer slots and release allocators
@@ -145,7 +137,6 @@ gpu_wait_idle :: () {
         using it;
 
         release_and_set_null(*mtl4_cmd_buffer);
-        release_and_set_null(*mtl4_allocator);
 
         if current_compute_encoder log("WARNING: current_compute_encoder is not null, but we called gpu_wait_idle");
         if current_render_encoder  log("WARNING: current_render_encoder is not null, but we called gpu_wait_idle");
@@ -178,7 +169,6 @@ gpu_queue_wait_idle :: (queue_handle: Gpu_Queue) {
     for * live_command_buffers {
         if it.mtl4_cmd_buffer != null && it.queue == queue_handle {
             release_and_set_null(it.mtl4_cmd_buffer);
-            release_and_set_null(*it.mtl4_allocator);
             it.current_compute_encoder = null;
             it.current_render_encoder = null;
         }
@@ -450,44 +440,76 @@ Queue :: struct {
     mtl4_queue: *MTL4CommandQueue;
     index_in_type: u32;
     type: Gpu_Queue_Type;
+    command_allocators: [MAX_FRAMES_IN_FLIGHT]*MTL4CommandAllocator;
 }
 
 
 init_queues :: () {
     auto_release_temp();
 
+    create_command_queue :: (debug_label: string) -> *MTL4CommandQueue {
+        desc := objc_new_defer_release(MTL4CommandQueueDescriptor);
+        desc.setLabel(desc, to_temp_nsstring(debug_label));
+        error: *NSError = null;
+        cmd_queue := MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, desc, *error);
+        log_error_if_not_null(error);
+        return cmd_queue;
+    }
+
+    create_command_allocator :: (debug_label: string) -> *MTL4CommandAllocator {
+        desc := objc_new_defer_release(MTL4CommandAllocatorDescriptor);
+        desc.setLabel(desc, to_temp_nsstring(debug_label));
+        error: *NSError = null;
+        cmd_allocator := MTLDevice.newCommandAllocatorWithDescriptor(mtl_device, desc, *error);
+        log_error_if_not_null(error);
+        return cmd_allocator;
+    }
+
     // Create MTL4 command queues for each type
     mtl4_desc := objc_new_defer_release(MTL4CommandQueueDescriptor);
-    error: *NSError = null;
+
+    queue_index := 0;
 
     // MAIN queue
-    queues[0].type = .MAIN;
-    queues[0].index_in_type = 0;
-    queues[0].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
+    {
+        using queue := *queues[queue_index]; queue_index += 1;
+        type = .MAIN;
+        index_in_type = 0;
+        mtl4_queue = create_command_queue("MAIN");
+        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("MAIN_alloc_%", i));
+        attach_residency_to_queue(mtl4_queue);
+    }
 
     // COMPUTE queues (4 of them, but Metal doesn't really distinguish - they all go to same HW)
     for i: 0..MAX_COMPUTE_QUEUES-1 {
-        queues[1 + i].type = .COMPUTE;
-        queues[1 + i].index_in_type = i.(u32);
-        error = null;
-        queues[1 + i].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
+        using queue := *queues[queue_index]; queue_index += 1;
+
+        type = .COMPUTE;
+        index_in_type = i.(u32);
+        mtl4_queue = create_command_queue(tprint("COMPUTE_%", i));
+        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("COMPUTE_alloc_%", i));
+        attach_residency_to_queue(mtl4_queue);
     }
 
     // TRANSFER queues (2 of them)
     for i: 0..MAX_TRANSFER_QUEUES-1 {
-        queues[5 + i].type = .TRANSFER;
-        queues[5 + i].index_in_type = i.(u32);
-        error = null;
-        queues[5 + i].mtl4_queue = MTLDevice.newMTL4CommandQueueWithDescriptor(mtl_device, mtl4_desc, *error);
+        using queue := *queues[queue_index]; queue_index += 1;
+
+        type = .TRANSFER;
+        index_in_type = i.(u32);
+        mtl4_queue = create_command_queue(tprint("TRANSFER_%", i));
+        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("TRANSFER_alloc_%", i));
+        attach_residency_to_queue(mtl4_queue);
     }
 }
 
 shutdown_queues :: () {
     for * queues {
-        if it.mtl4_queue != null {
-            release(it.mtl4_queue);
-            it.mtl4_queue = null;
+        release_and_set_null(*it.mtl4_queue);
+        for allocator: it.command_allocators {
+            release(allocator);
         }
+        it.* = {};
     }
 }
 
@@ -501,7 +523,6 @@ get_queue :: (queue_handle: Gpu_Queue) -> *Queue {
 
 Command_Buffer_Info :: struct {
     mtl4_cmd_buffer: *MTL4CommandBuffer;
-    mtl4_allocator: *MTL4CommandAllocator;
     queue: Gpu_Queue;
     current_compute_encoder: *MTL4ComputeCommandEncoder;
     current_render_encoder: *MTL4RenderCommandEncoder;
@@ -592,3 +613,11 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
 
 live_command_buffers: [..] Command_Buffer_Info;
 queues: [MAX_COMPUTE_QUEUES + MAX_TRANSFER_QUEUES + 1] Queue;
+
+to_temp_nsstring :: (fmt: string, args: ..Any) -> *NSString #expand {
+    str := tprint(fmt, ..args);
+
+    result := NSString.initWithString(objc_alloc(NSString), str);
+    `defer release(result);
+    return result;
+}

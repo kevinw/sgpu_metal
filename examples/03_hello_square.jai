@@ -89,6 +89,8 @@ main :: () {
     frame_count: s64 = 0;
     quit := false;
     while !quit && frame_count < max_frames {
+        gpu_push_frame();
+
         update_window_events();
         for events_this_frame {
             if it.type == .QUIT then quit = true;

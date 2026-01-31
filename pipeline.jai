@@ -1,50 +1,26 @@
 #scope_export
 
 gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
-    // Create a library from the Metal source code
-    ns_source := NSString.initWithBytes(
-        objc_alloc(NSString),
-        metal_source.data,
-        metal_source.count.(NSUInteger),
-        NSUTF8StringEncoding
-    );
-    defer release(ns_source);
-
     // Create compile options with Metal 3.2 language version (required for MTL4)
-    compile_options := objc_new(MTLCompileOptions);
-    defer release(compile_options);
+    compile_options := objc_new_defer_release(MTLCompileOptions);
     MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
 
     error: *NSError;
-
-    mtl_library := MTLDevice.newLibraryWithSource(mtl_device, ns_source, compile_options, *error);
+    mtl_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(metal_source), compile_options, *error);
     defer if mtl_library release(mtl_library);
-
-    if error != null {
-        log_error("Failed to compile Metal shader: %", to_string(NSError.localizedDescription(error)));
-        return 0;
-    }
-    if mtl_library == null {
+    if log_error_if_not_null(error) || mtl_library == null {
         log_error("Failed to create Metal library");
         return 0;
     }
 
     // Get the entry point function from the library
     // Try "computeMain" first (our convention), then fall back to "main"
-    function_name := "computeMain";
-
-    main_name := NSString.initWithBytes(objc_alloc(NSString), function_name.data, function_name.count.(NSUInteger), NSUTF8StringEncoding);
-    defer release(main_name);
-
-    mtl_function := MTLLibrary.newFunctionWithName(mtl_library, main_name);
+    mtl_function := MTLLibrary.newFunctionWithName(mtl_library, to_temp_nsstring("computeMain"));
     defer if mtl_function then release(mtl_function);
 
     // If computeMain not found, try "main"
     if mtl_function == null {
-        function_name = "main";
-        release(main_name);
-        main_name = NSString.initWithBytes(objc_alloc(NSString), function_name.data, function_name.count.(NSUInteger), NSUTF8StringEncoding);
-        mtl_function = MTLLibrary.newFunctionWithName(mtl_library, main_name);
+        mtl_function = MTLLibrary.newFunctionWithName(mtl_library, to_temp_nsstring("main"));
     }
 
     if mtl_function == null {
@@ -54,9 +30,8 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
 
     // Create the compute pipeline state
     mtl_pipeline := MTLDevice.newComputePipelineStateWithFunction(mtl_device, mtl_function, *error);
-    if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to create compute pipeline: %", error_str);
+    if log_error_if_not_null(error) {
+        log_error("Failed to create compute pipeline.");
         return 0;
     }
 
@@ -75,64 +50,39 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     auto_release_temp();
 
     // Create library from vertex shader Metal source
-    ns_vertex_source := NSString.initWithBytes(
-        objc_alloc(NSString),
-        vertex_metal.data,
-        vertex_metal.count.(NSUInteger),
-        NSUTF8StringEncoding
-    );
-    defer release(ns_vertex_source);
-
-    compile_options := objc_new(MTLCompileOptions);
-    defer release(compile_options);
+    compile_options := objc_new_defer_release(MTLCompileOptions);
     MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
 
     error: *NSError;
-    vertex_library := MTLDevice.newLibraryWithSource(mtl_device, ns_vertex_source, compile_options, *error);
-    if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to compile vertex shader: %", error_str);
+    vertex_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(vertex_metal), compile_options, *error);
+    defer if vertex_library release(vertex_library);
+    if log_error_if_not_null(error) {
+        log_error("Failed to compile vertex shader.");
         return 0;
     }
     if vertex_library == null {
         log_error("Failed to create vertex library");
         return 0;
     }
-    defer release(vertex_library);
 
     // Create library from pixel shader Metal source
-    ns_pixel_source := NSString.initWithBytes(
-        objc_alloc(NSString),
-        pixel_metal.data,
-        pixel_metal.count.(NSUInteger),
-        NSUTF8StringEncoding
-    );
-    defer release(ns_pixel_source);
-
     error = null;
-    pixel_library := MTLDevice.newLibraryWithSource(mtl_device, ns_pixel_source, compile_options, *error);
-    if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to compile pixel shader: %", error_str);
+    pixel_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(pixel_metal), compile_options, *error);
+    defer if pixel_library release(pixel_library);
+    if log_error_if_not_null(error) {
+        log_error("Failed to compile pixel shader.");
         return 0;
     }
     if pixel_library == null {
         log_error("Failed to create pixel library");
         return 0;
     }
-    defer release(pixel_library);
 
     // Get vertex function - try various names (Slang may rename "main" to "main_0")
     vertex_function := get_function_from_library(vertex_library, "vertexMain");
-    if vertex_function == null {
-        vertex_function = get_function_from_library(vertex_library, "vertexMain_0");
-    }
-    if vertex_function == null {
-        vertex_function = get_function_from_library(vertex_library, "main");
-    }
-    if vertex_function == null {
-        vertex_function = get_function_from_library(vertex_library, "main_0");
-    }
+    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "vertexMain_0");
+    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "main");
+    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "main_0");
     if vertex_function == null {
         log_error("Failed to find vertex function in shader");
         return 0;
@@ -151,25 +101,16 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     defer release(fragment_function);
 
     // Create MTL4 render pipeline descriptor
-    pipeline_desc := objc_new(MTL4RenderPipelineDescriptor);
-    defer release(pipeline_desc);
+    pipeline_desc := objc_new_defer_release(MTL4RenderPipelineDescriptor);
 
     // Create function descriptors for MTL4
-    vertex_func_desc := objc_new(MTL4LibraryFunctionDescriptor);
-    defer release(vertex_func_desc);
+    vertex_func_desc := objc_new_defer_release(MTL4LibraryFunctionDescriptor);
     MTL4LibraryFunctionDescriptor.setLibrary(vertex_func_desc, vertex_library);
-    {
-        name := get_function_name(vertex_function);
-        MTL4LibraryFunctionDescriptor.setName(vertex_func_desc, name);
-    }
+    MTL4LibraryFunctionDescriptor.setName(vertex_func_desc, MTLFunction.name(vertex_function));
 
-    fragment_func_desc := objc_new(MTL4LibraryFunctionDescriptor);
-    defer release(fragment_func_desc);
+    fragment_func_desc := objc_new_defer_release(MTL4LibraryFunctionDescriptor);
     MTL4LibraryFunctionDescriptor.setLibrary(fragment_func_desc, pixel_library);
-    {
-        name := get_function_name(fragment_function);
-        MTL4LibraryFunctionDescriptor.setName(fragment_func_desc, name);
-    }
+    MTL4LibraryFunctionDescriptor.setName(fragment_func_desc, MTLFunction.name(fragment_function));
 
     pipeline_desc.setVertexFunctionDescriptor(pipeline_desc, vertex_func_desc);
     pipeline_desc.setFragmentFunctionDescriptor(pipeline_desc, fragment_func_desc);
@@ -185,7 +126,6 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
         // Configure blending if we have a blend state
         if raster_desc.blend_state != null {
             blend := raster_desc.blend_state;
-
 
             // Enable blending if any factor is not the default
             if blend.src_color_factor != .ZERO || blend.dst_color_factor != .ZERO {
@@ -211,16 +151,12 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     }
 
     // Create the compiler and pipeline state
-    compiler_desc := objc_new(MTL4CompilerDescriptor);
-    defer release(compiler_desc);
+    compiler_desc := objc_new_defer_release(MTL4CompilerDescriptor);
 
     error = null;
     compiler := MTLDevice.newCompilerWithDescriptor(mtl_device, compiler_desc, *error);
     if error != null || compiler == null {
-        if error != null {
-            error_str := to_string(NSError.localizedDescription(error));
-            log_error("Failed to create compiler: %", error_str);
-        }
+        log_error_if_not_null(error, "newCompilerWithDescriptor");
         return 0;
     }
     defer release(compiler);
@@ -346,10 +282,6 @@ get_function_from_library :: (library: *MTLLibrary, name: string) -> *MTLFunctio
     ns_name := NSString.initWithBytes(objc_alloc(NSString), name.data, name.count.(NSUInteger), NSUTF8StringEncoding);
     defer release(ns_name);
     return MTLLibrary.newFunctionWithName(library, ns_name);
-}
-
-get_function_name :: (func: *MTLFunction) -> *NSString {
-    return MTLFunction.name(func);
 }
 
 blend_factor_to_mtl :: (factor: Factor) -> MTLBlendFactor {

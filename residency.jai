@@ -12,8 +12,7 @@ gpu_commit_residency :: () {
 global_residency_set: *MTLResidencySet;
 
 init_residency :: () {
-    desc := objc_new(MTLResidencySetDescriptor);
-    defer release(desc);
+    desc := objc_scope_new(MTLResidencySetDescriptor);
     desc.setInitialCapacity(desc, 128);
 
     error: *NSError = null;

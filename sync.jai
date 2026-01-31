@@ -59,10 +59,9 @@ gpu_wait_semaphore_on_queue :: (queue_handle: Gpu_Queue, semaphore_handle: Gpu_S
 }
 
 gpu_get_semaphore_value :: (semaphore_handle: Gpu_Semaphore) -> u64 {
-    semaphore := get_semaphore(semaphore_handle);
-    if semaphore == null || semaphore.mtl_event == null then return 0;
-
-    return MTLSharedEvent.signaledValue(semaphore.mtl_event);
+    using semaphore := get_semaphore(semaphore_handle);
+    if semaphore == null || mtl_event == null then return 0;
+    return mtl_event.signaledValue(mtl_event);
 }
 
 #scope_module

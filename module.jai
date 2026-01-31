@@ -11,21 +11,13 @@
 
 
 Gpu_Pipeline :: #type,distinct s64;
-
 Gpu_Texture :: #type,distinct s64;
-
 Gpu_Texture_View :: #type,distinct u32;
-
 Gpu_Sampler :: #type,distinct u32;
-
 Gpu_Depth_Stencil_State :: #type,distinct s64;
-
 Gpu_Blend_State :: #type,distinct s64;
-
 Gpu_Queue :: #type,distinct s64;
-
 Gpu_Command_Buffer :: #type,distinct s64;
-
 Gpu_Semaphore :: #type,distinct s64;
 
 Cull :: enum {
@@ -562,6 +554,7 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
 }
 
 gpu_shutdown :: () {
+    shutdown_swapchain();
     shutdown_bindless();
     shutdown_queues();
     shutdown_residency();
@@ -686,4 +679,19 @@ objc_new_defer_release :: ($type: Type) -> *type #expand {
     obj := objc_new(type);
     `defer release(obj);
     return obj;
+}
+
+objc_scope_new :: objc_new_defer_release;
+
+log_error_if_not_null :: (error: *NSError, description: string = "") -> bool {
+    if error == null return false;
+
+    err_str := to_string(NSError.localizedDescription(error));
+    if description {
+        log_error("%: %", description, err_str);
+    } else {
+        log_error(err_str);
+    }
+
+    return true;
 }

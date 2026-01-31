@@ -30,10 +30,7 @@ init_bindless :: () {
     // Create the global argument table
     error: *NSError = null;
     global_argument_table = MTLDevice.newArgumentTableWithDescriptor(mtl_device, descriptor, *error);
-
-    if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to create global argument table: %", error_str);
+    if log_error_if_not_null(error) {
         global_argument_table = null;
         return;
     }
@@ -45,10 +42,7 @@ init_bindless :: () {
 }
 
 shutdown_bindless :: () {
-    if global_argument_table != null {
-        release(global_argument_table);
-        global_argument_table = null;
-    }
+    release_and_set_null(*global_argument_table);
 }
 
 // Add a buffer to the global argument table and return its index

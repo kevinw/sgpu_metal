@@ -56,11 +56,9 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
     defer slang.ISlangUnknown_release(session);
 
     diagnostic_blob: *slang.IBlob = null;
+
     slang_module := slang.ISession_loadModule(session, temp_c_string(shader_path), *diagnostic_blob);
-    if diagnostic_blob != null {
-        log_diagnostic_blob(diagnostic_blob);
-        diagnostic_blob = null;
-    }
+    log_blob_if_nonnull(*diagnostic_blob);
     if !slang_module then return false, "";
 
     entry_points: [..] *slang.IEntryPoint;
@@ -83,34 +81,25 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
 
     composed_program: *slang.IComponentType;
     slang.ISession_createCompositeComponentType(session, components.data, components.count, *composed_program, *diagnostic_blob);
-    if diagnostic_blob != null {
-        log_diagnostic_blob(diagnostic_blob);
-        diagnostic_blob = null;
-    }
+    log_blob_if_nonnull(*diagnostic_blob);
     if !composed_program then return false, "";
     defer slang.ISlangUnknown_release(composed_program);
 
     linked_program: *slang.IComponentType;
     link_result := slang.IComponentType_link(composed_program, *linked_program, *diagnostic_blob);
-    if diagnostic_blob != null {
-        log_diagnostic_blob(diagnostic_blob);
-        diagnostic_blob = null;
-    }
+    log_blob_if_nonnull(*diagnostic_blob);
     if !slang.SLANG_SUCCEEDED(link_result) || !linked_program then return false, "";
     defer slang.ISlangUnknown_release(linked_program);
 
     metal_code: *slang.IBlob = null;
     slang.IComponentType_getEntryPointCode(linked_program, 0, 0, *metal_code, *diagnostic_blob);
-    if diagnostic_blob != null {
-        log_diagnostic_blob(diagnostic_blob);
-        diagnostic_blob = null;
-    }
+    log_blob_if_nonnull(*diagnostic_blob);
     if !metal_code then return false, "";
     defer slang.ISlangUnknown_release(metal_code);
 
     // Get the Metal source as a string
     metal_source: string = {
-        data = slang.ISlangBlob_getBufferPointer(metal_code),
+        data  =    slang.ISlangBlob_getBufferPointer(metal_code),
         count = xx slang.ISlangBlob_getBufferSize(metal_code),
     };
 
@@ -120,7 +109,7 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
     if write_output {
         output_directory := path_strip_filename(shader_path);
         output_path := tprint("%/%.generated.metal", output_directory, path_strip_extension(path_filename(shader_path)));
-        write_entire_file(output_path, result);
+        File.write_entire_file(output_path, result);
     }
 
     return true, result;
@@ -128,28 +117,39 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
 
 #scope_module
 
-gpu_internal_slang_shutdown :: slang.slang_shutdown;
+gpu_internal_slang_shutdown :: () {
+    if global_session != null {
+        slang.ISlangUnknown_release(global_session);
+        global_session = null;
+    }
+    slang.slang_shutdown();
+}
 
 #scope_file
-
-log_diagnostic_blob :: (blob: *slang.IBlob) {
-    diagnostic_string := string.{
-        data = slang.ISlangBlob_getBufferPointer(blob),
-        count = xx slang.ISlangBlob_getBufferSize(blob),
-    };
-
-    // #todo: how to pass shader compilation failures up to the user.
-    log_error("%", diagnostic_string);
-
-    slang.ISlangUnknown_release(blob);
-}
 
 create_session :: () {
     result := slang.slang_createGlobalSession(slang.SLANG_API_VERSION, *global_session);
     assert(slang.SLANG_SUCCEEDED(result));
 }
 
+log_blob_if_nonnull :: (blob_ptr: **slang.IBlob) {
+    if blob_ptr.* == null return;
+
+    blob := blob_ptr.*;
+
+    diagnostic_string := string.{
+        data = slang.ISlangBlob_getBufferPointer(blob),
+        count = xx slang.ISlangBlob_getBufferSize(blob),
+    };
+
+    log_error("%", diagnostic_string);
+
+    slang.ISlangUnknown_release(blob);
+    blob_ptr.* = null;
+}
+
+
 global_session: *slang.IGlobalSession;
 
 slang :: #import,file "modules/slang/module.jai";
-#import "File";
+File :: #import "File";

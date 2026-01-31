@@ -8,6 +8,13 @@ Native_Window_Type :: enum {
     COCOA;
 }
 
+// Push and defer a pop in the parent scope, an autorelease pool for this frame
+gpu_push_frame :: () #expand {
+    assert(frame_autorelease_pool == null);
+    frame_autorelease_pool = objc_new(NSAutoreleasePool);
+    `defer release_and_set_null(*frame_autorelease_pool);
+}
+
 gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     assert(window_type == .COCOA, "Only Cocoa windows are supported on Metal");
 
@@ -22,15 +29,15 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     // Configure the Metal layer
     CAMetalLayer.setDevice(swapchain_layer, mtl_device);
     CAMetalLayer.setPixelFormat(swapchain_layer, .BGRA8Unorm);
-    CAMetalLayer.setFramebufferOnly(swapchain_layer, NO);  // Allow reading from swapchain textures
+    CAMetalLayer.setFramebufferOnly(swapchain_layer, YES);
 
     // Get the initial drawable size
     drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
-    surface_width = cast(u32) drawable_size.width;
+    surface_width  = cast(u32) drawable_size.width;
     surface_height = cast(u32) drawable_size.height;
 
-    // Create the frame timeline semaphore for synchronization
-    gpu_frame_timeline = gpu_create_semaphore(0);
+    // Create the frame completion event for synchronization
+    frame_completion_event = mtl_device.newSharedEvent(mtl_device);
 }
 
 gpu_swapchain_resize :: () {
@@ -39,7 +46,7 @@ gpu_swapchain_resize :: () {
 
     // Get the new drawable size
     drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
-    surface_width = cast(u32) drawable_size.width;
+    surface_width  = cast(u32) drawable_size.width;
     surface_height = cast(u32) drawable_size.height;
 
     // Clean up old swapchain texture views
@@ -48,30 +55,21 @@ gpu_swapchain_resize :: () {
 
 gpu_destroy_swapchain :: () {
     cleanup_swapchain_views();
-
-    if gpu_frame_timeline != 0 {
-        gpu_destroy_semaphore(gpu_frame_timeline);
-        gpu_frame_timeline = 0;
-    }
-
     swapchain_layer = null;
 }
 
 gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
-    // Wait for the next frame slot to be available
-    wait_next_frame();
-
-    // Create an autorelease pool for this frame
-    release_and_set_null(*swapchain_autorelease_pool);
-    swapchain_autorelease_pool = objc_new(NSAutoreleasePool);
+    // Wait if the CPU is trying to submit more than MAX_FRAMES_IN_FLIGHT before the GPU can get to them.
+    if frame_index >= MAX_FRAMES_IN_FLIGHT {
+        value_to_wait := frame_index - MAX_FRAMES_IN_FLIGHT;
+        frame_completion_event.waitUntilSignaledValue(frame_completion_event, value_to_wait, U64_MAX);
+    }
 
     // Get the next drawable from the layer
     current_drawable = CAMetalLayer.nextDrawable(swapchain_layer);
     if current_drawable == null {
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
-
-    cpu_frame_timeline += 1;
 
     // Get the drawable's texture
     drawable_texture := CAMetalDrawable.texture(current_drawable);
@@ -105,46 +103,17 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     // 3. Signal drawable completion
     // 4. Present drawable
 
-    MTL4CommandQueue.waitForDrawable(queue.mtl4_queue, current_drawable);
-
-    // Commit the command buffer
-    cmd_buffers: [1] *MTL4CommandBuffer;
-    cmd_buffers[0] = cmd_info.mtl4_cmd_buffer;
-    MTL4CommandQueue.commit(queue.mtl4_queue, cmd_buffers.data, 1);
-
-    // Signal that rendering to drawable is complete
-    MTL4CommandQueue.signalDrawable(queue.mtl4_queue, current_drawable);
-
-    // Signal the frame timeline
-    if gpu_frame_timeline != 0 {
-        semaphore := get_semaphore(gpu_frame_timeline);
-        if semaphore != null && semaphore.mtl_event != null {
-            MTL4CommandQueue.signalEvent(queue.mtl4_queue, semaphore.mtl_event, cpu_frame_timeline);
-        }
-    }
-
-    // Present the drawable
-    CAMetalDrawable.present(current_drawable);
-
-    // Clear the current drawable reference (Metal owns it now)
-    current_drawable = null;
-
-    release_and_set_null(*swapchain_autorelease_pool);
-}
-
-gpu_present :: () {
+    using queue;
+    MTL4CommandQueue.waitForDrawable(mtl4_queue, current_drawable);
+    MTL4CommandQueue.commit(mtl4_queue, *cmd_info.mtl4_cmd_buffer, 1);
+    MTL4CommandQueue.signalDrawable(mtl4_queue, current_drawable);
     if current_drawable != null {
         CAMetalDrawable.present(current_drawable);
         current_drawable = null;
     }
-}
 
-gpu_get_frame_timeline :: () -> Gpu_Semaphore {
-    return gpu_frame_timeline;
-}
-
-gpu_frame_index :: () -> u32 {
-    return (cpu_frame_timeline % MAX_FRAMES_IN_FLIGHT).(u32);
+    value_to_signal := frame_index;
+    MTL4CommandQueue.signalEvent(mtl4_queue, frame_completion_event, value_to_signal);
 }
 
 #scope_module
@@ -158,9 +127,8 @@ surface_height: u32;
 current_drawable: *CAMetalDrawable;
 current_swapchain_view: Gpu_Texture_View;
 
-// Frame timeline for synchronization
-gpu_frame_timeline: Gpu_Semaphore;
-cpu_frame_timeline: u64;
+frame_completion_event: *MTLSharedEvent;
+frame_index: u64 = 0;
 
 // Swapchain texture tracking
 Swapchain_Texture_Entry :: struct {
@@ -170,13 +138,6 @@ Swapchain_Texture_Entry :: struct {
 }
 
 swapchain_textures: [..] Swapchain_Texture_Entry;
-
-wait_next_frame :: () {
-    if cpu_frame_timeline >= MAX_FRAMES_IN_FLIGHT {
-        wait_value := cpu_frame_timeline + 1 - MAX_FRAMES_IN_FLIGHT;
-        gpu_wait_semaphore(.{gpu_frame_timeline, wait_value});
-    }
-}
 
 create_swapchain_texture_view :: (mtl_texture: *MTLTexture) -> Gpu_Texture_View {
     // Check if we already have a view for this texture
@@ -264,7 +225,11 @@ is_kind_of_class :: (obj: id, class: Class) -> bool {
     return func(obj, sel, class) == YES;
 }
 
-swapchain_autorelease_pool: *NSAutoreleasePool;
+shutdown_swapchain :: () {
+    release_and_set_null(*frame_completion_event);
+}
+
+frame_autorelease_pool: *NSAutoreleasePool;
 
 #import "Objective_C";
 #import "Objective_C/AppKit";
