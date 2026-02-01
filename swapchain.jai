@@ -76,12 +76,20 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
 
-    queue := get_queue(gpu_get_queue(.MAIN, 0));
-    if queue == null {
-        log_error("Failed to get main queue");
-        return .FATAL_ERROR_UNKNOWN, 0;
-    } else {
-        queue.mtl4_queue.addResidencySet(queue.mtl4_queue, swapchain_layer.residencySet(swapchain_layer));
+    // TODO: gpu_swapchain_aquire doesn't specify the 0th MAIN queue, but we're adding the CAMetalLayer's residencySet
+    // here to it. Might need to add a queue argument to gpu_swaphchain_acquire?
+    // Not sure how it fits into the sgpu API yet.
+    {
+        queue := get_queue(gpu_get_queue(.MAIN, 0));
+        if queue == null {
+            log_error("gpu_swapchain_acquire: Failed to get main queue");
+            return .FATAL_ERROR_UNKNOWN, 0;
+        }
+        assert(queue.mtl4_queue != null);
+
+        layer_residency_set := swapchain_layer.residencySet(swapchain_layer);
+        assert(layer_residency_set != null);
+        queue.mtl4_queue.addResidencySet(queue.mtl4_queue, layer_residency_set);
     }
 
     // Get the drawable's texture
@@ -92,7 +100,6 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
 
     // Create or update the texture view for this drawable
     current_swapchain_view = create_swapchain_texture_view(drawable_texture);
-
 
     return .SUCCESS, current_swapchain_view;
 }
@@ -119,7 +126,7 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
 
     using queue;
     MTL4CommandQueue.waitForDrawable(mtl4_queue, current_drawable);
-    MTL4CommandQueue.commit(mtl4_queue, *cmd_info.mtl4_cmd_buffer, 1);
+    MTL4CommandQueue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
     MTL4CommandQueue.signalDrawable(mtl4_queue, current_drawable);
     if current_drawable != null {
         CAMetalDrawable.present(current_drawable);
