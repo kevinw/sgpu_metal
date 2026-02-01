@@ -26,15 +26,20 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     swapchain_layer = ns_window_get_metal_layer(ns_window);
     assert(swapchain_layer != null, "Failed to get CAMetalLayer from window");
 
-    // Configure the Metal layer
-    CAMetalLayer.setDevice(swapchain_layer, mtl_device);
-    CAMetalLayer.setPixelFormat(swapchain_layer, .BGRA8Unorm);
-    CAMetalLayer.setFramebufferOnly(swapchain_layer, YES);
+    // Configure the CAMetalLayer
+    {
+        using swapchain_layer;
 
-    // Get the initial drawable size
-    drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
-    surface_width  = cast(u32) drawable_size.width;
-    surface_height = cast(u32) drawable_size.height;
+        setDevice(swapchain_layer, mtl_device);
+        setPixelFormat(swapchain_layer, .BGRA8Unorm);
+        setFramebufferOnly(swapchain_layer, YES);
+
+        // Get the initial drawable size
+        drawable_size := drawableSize(swapchain_layer);
+        surface_width  = cast(u32) drawable_size.width;
+        surface_height = cast(u32) drawable_size.height;
+    }
+
 
     // Create the frame completion event for synchronization
     frame_completion_event = mtl_device.newSharedEvent(mtl_device);
@@ -71,6 +76,14 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
 
+    queue := get_queue(gpu_get_queue(.MAIN, 0));
+    if queue == null {
+        log_error("Failed to get main queue");
+        return .FATAL_ERROR_UNKNOWN, 0;
+    } else {
+        queue.mtl4_queue.addResidencySet(queue.mtl4_queue, swapchain_layer.residencySet(swapchain_layer));
+    }
+
     // Get the drawable's texture
     drawable_texture := CAMetalDrawable.texture(current_drawable);
     if drawable_texture == null {
@@ -79,6 +92,7 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
 
     // Create or update the texture view for this drawable
     current_swapchain_view = create_swapchain_texture_view(drawable_texture);
+
 
     return .SUCCESS, current_swapchain_view;
 }

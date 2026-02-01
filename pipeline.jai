@@ -79,10 +79,7 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     }
 
     // Get vertex function - try various names (Slang may rename "main" to "main_0")
-    vertex_function := get_function_from_library(vertex_library, "vertexMain");
-    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "vertexMain_0");
-    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "main");
-    if vertex_function == null vertex_function = get_function_from_library(vertex_library, "main_0");
+    vertex_function := get_function_from_library(vertex_library, "vertexMain", "vertexMain_0", "main", "main_0");
     if vertex_function == null {
         log_error("Failed to find vertex function in shader");
         return 0;
@@ -90,30 +87,25 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     defer release(vertex_function);
 
     // Get fragment function - try various names (Slang may rename "main" to "main_0")
-    fragment_function := get_function_from_library(pixel_library, "fragmentMain");
-    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "fragmentMain_0");
-    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "main");
-    if fragment_function == null fragment_function = get_function_from_library(pixel_library, "main_0");
+    fragment_function := get_function_from_library(pixel_library, "fragmentMain", "fragmentMain_0", "main", "main_0");
     if fragment_function == null {
         log_error("Failed to find fragment function in shader");
         return 0;
     }
     defer release(fragment_function);
 
+    func_desc :: (mtl_library: *MTLLibrary, function: *MTLFunction) -> *MTL4LibraryFunctionDescriptor #expand {
+        using func_desc := objc_new(MTL4LibraryFunctionDescriptor);
+        `defer release(func_desc);
+        setLibrary(func_desc, mtl_library);
+        setName(func_desc, MTLFunction.name(function));
+        return func_desc;
+    }
+
     // Create MTL4 render pipeline descriptor
     pipeline_desc := objc_new_defer_release(MTL4RenderPipelineDescriptor);
-
-    // Create function descriptors for MTL4
-    vertex_func_desc := objc_new_defer_release(MTL4LibraryFunctionDescriptor);
-    MTL4LibraryFunctionDescriptor.setLibrary(vertex_func_desc, vertex_library);
-    MTL4LibraryFunctionDescriptor.setName(vertex_func_desc, MTLFunction.name(vertex_function));
-
-    fragment_func_desc := objc_new_defer_release(MTL4LibraryFunctionDescriptor);
-    MTL4LibraryFunctionDescriptor.setLibrary(fragment_func_desc, pixel_library);
-    MTL4LibraryFunctionDescriptor.setName(fragment_func_desc, MTLFunction.name(fragment_function));
-
-    pipeline_desc.setVertexFunctionDescriptor(pipeline_desc, vertex_func_desc);
-    pipeline_desc.setFragmentFunctionDescriptor(pipeline_desc, fragment_func_desc);
+    pipeline_desc.setVertexFunctionDescriptor(pipeline_desc, func_desc(vertex_library, vertex_function));
+    pipeline_desc.setFragmentFunctionDescriptor(pipeline_desc, func_desc(pixel_library, fragment_function));
 
     // Configure color attachments
     color_attachments := pipeline_desc.colorAttachments(pipeline_desc);
@@ -164,16 +156,12 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     // Create compiler task options (can be null for default options)
     task_options: *MTL4CompilerTaskOptions = null;
 
-    error = null;
-
     // Cast pipeline_desc to base type MTL4PipelineDescriptor
+    error = null;
     render_pipeline := MTL4Compiler.newRenderPipelineStateWithDescriptor(compiler, pipeline_desc, task_options, *error);
-    if error != null {
-        error_str := to_string(NSError.localizedDescription(error));
-        log_error("Failed to create render pipeline: %", error_str);
+    if log_error_if_not_null(error, "newRenderPipelineStateWithDescriptor") {
         return 0;
     }
-
     if render_pipeline == null {
         log_error("Failed to create render pipeline state");
         return 0;
@@ -221,13 +209,8 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
         init_bindless();
     }
 
-    // Set the pipeline state
     MTL4ComputeCommandEncoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
-
-    // Set the buffer address in the argument table at index 0
     MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) data, 0);
-
-    // Bind the argument table to the encoder
     MTL4ComputeCommandEncoder.setArgumentTable(compute_encoder, global_argument_table);
 
     // Get thread execution width and calculate threads per threadgroup
@@ -241,9 +224,9 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
 
     // Dispatch threadgroups
     threadgroups := MTLSize.{
-        width = dimensions[0].(NSUInteger),
+        width  = dimensions[0].(NSUInteger),
         height = dimensions[1].(NSUInteger),
-        depth = dimensions[2].(NSUInteger)
+        depth  = dimensions[2].(NSUInteger),
     };
 
     MTL4ComputeCommandEncoder.dispatchThreadgroups(compute_encoder, threadgroups, threads_per_group);
@@ -278,10 +261,14 @@ get_pipeline :: (handle: Gpu_Pipeline) -> *Pipeline {
     return pool_get(live_pipelines, handle);
 }
 
-get_function_from_library :: (library: *MTLLibrary, name: string) -> *MTLFunction {
-    ns_name := NSString.initWithBytes(objc_alloc(NSString), name.data, name.count.(NSUInteger), NSUTF8StringEncoding);
-    defer release(ns_name);
-    return MTLLibrary.newFunctionWithName(library, ns_name);
+get_function_from_library :: (library: *MTLLibrary, names: ..string) -> *MTLFunction {
+    for name: names {
+        fn := MTLLibrary.newFunctionWithName(library, to_temp_nsstring(name));
+        if fn != null {
+            return fn;
+        }
+    }
+    return null;
 }
 
 blend_factor_to_mtl :: (factor: Factor) -> MTLBlendFactor {
