@@ -25,12 +25,17 @@ main :: () {
 
     main_queue := gpu_get_queue(.MAIN, 0);
 
-    success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
-    assert(success);
-    defer free(vertex_spv);
-    success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success);
-    assert(success);
-    defer free(pixel_spv);
+    #if 0 {
+        success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
+        defer free(vertex_spv);
+        success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
+        defer free(pixel_spv);
+    } else {
+        vertex_spv, ok := File.read_entire_file("shaders/hello_square_vs.metal"); assert(ok);
+        defer free(vertex_spv);
+        pixel_spv, ok= := File.read_entire_file("shaders/hello_square_ps.metal"); assert(ok);
+        defer free(pixel_spv);
+    }
 
     blend_state: Gpu_Blend_Desc;
     raster_desc := Gpu_Raster_Desc.{
@@ -57,6 +62,7 @@ main :: () {
     defer gpu_free_arena(gpu_arena);
 
     vertex_buffer, vertex_gpu := gpu_arena_alloc(*gpu_arena, [4] Vertex2D);
+    log("at init, actual vertices at %", vertex_gpu);
     vertex_buffer.* = .[
         .{ 0.5,   0.5 },
         .{ 0.5,  -0.5 },
@@ -73,6 +79,7 @@ main :: () {
     ];
 
     param_block, vertex_params_gpu := gpu_arena_alloc(*gpu_arena, [2] Gpu_Ptr);
+    log("at init, vertex param block at %", vertex_params_gpu);
     param_block.* = .[vertex_gpu, colors_gpu];
 
     index_buffer, index_gpu := gpu_arena_alloc(*gpu_arena, [6] u32);
@@ -101,10 +108,7 @@ main :: () {
 
         result=, swapchain_image := gpu_swapchain_acquire();
         assert(result == .SUCCESS);
-        if !swapchain_image {
-            log("No swapchain image available");
-            continue;
-        }
+        if !swapchain_image continue;
 
         result=, cmd_buff := gpu_start_command_recording(main_queue);
         assert(result == .SUCCESS);
@@ -133,7 +137,6 @@ main :: () {
 
         gpu_submit_and_present(cmd_buff);
         frame_count += 1;
-        gpu_wait_idle(); /// XXX do max frames in flight and semaphores and remove this.
     }
 
     gpu_wait_idle();
@@ -145,3 +148,4 @@ main :: () {
 #import "Input";
 #import "Command_Line";
 #load "utils/window.jai";
+File :: #import "File";

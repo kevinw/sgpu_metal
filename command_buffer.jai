@@ -48,7 +48,6 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     if !found_slot {
         slot_index = live_command_buffers.count;
         array_add(*live_command_buffers, cmd_info);
-        log("Max live command buffers %", slot_index);
     }
 
     cmd_buff_handle := cast(Gpu_Command_Buffer) (slot_index + 1);
@@ -614,9 +613,7 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
 live_command_buffers: [..] Command_Buffer_Info;
 queues: [MAX_COMPUTE_QUEUES + MAX_TRANSFER_QUEUES + 1] Queue;
 
-to_temp_nsstring :: (fmt: string, args: ..Any) -> *NSString #expand {
-    str := tprint(fmt, ..args);
-
+to_temp_nsstring :: (str: string) -> *NSString #expand {
     result := NSString.initWithString(objc_alloc(NSString), str);
     `defer release(result);
     return result;

@@ -1,9 +1,7 @@
 #scope_export
 
 gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
-    // Create compile options with Metal 3.2 language version (required for MTL4)
-    compile_options := objc_new_defer_release(MTLCompileOptions);
-    MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
+    compile_options := new_scoped_common_mtl_compile_options();
 
     error: *NSError;
     mtl_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(metal_source), compile_options, *error);
@@ -50,33 +48,25 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     auto_release_temp();
 
     // Create library from vertex shader Metal source
-    compile_options := objc_new_defer_release(MTLCompileOptions);
-    MTLCompileOptions.setLanguageVersion(compile_options, ._3_2);
+    compile_options := new_scoped_common_mtl_compile_options();
 
-    error: *NSError;
-    vertex_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(vertex_metal), compile_options, *error);
-    defer if vertex_library release(vertex_library);
-    if log_error_if_not_null(error) {
-        log_error("Failed to compile vertex shader.");
-        return 0;
-    }
-    if vertex_library == null {
-        log_error("Failed to create vertex library");
-        return 0;
+    new_scoped_library :: (source: string, debug_name: string) -> *MTLLibrary #expand {
+        error: *NSError;
+        library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(source), compile_options, *error);
+        if log_error_if_not_null(error) {
+            log_error("Failed to compile %.", debug_name);
+            `return 0;
+        }
+        if library == null {
+            log_error("Failed to create % library", debug_name);
+            `return 0;
+        }
+        `defer release(library);
+        return library;
     }
 
-    // Create library from pixel shader Metal source
-    error = null;
-    pixel_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(pixel_metal), compile_options, *error);
-    defer if pixel_library release(pixel_library);
-    if log_error_if_not_null(error) {
-        log_error("Failed to compile pixel shader.");
-        return 0;
-    }
-    if pixel_library == null {
-        log_error("Failed to create pixel library");
-        return 0;
-    }
+    vertex_library := new_scoped_library(vertex_metal, "vertex shader");
+    pixel_library  := new_scoped_library(pixel_metal,  "fragment shader");
 
     // Get vertex function - try various names (Slang may rename "main" to "main_0")
     vertex_function := get_function_from_library(vertex_library, "vertexMain", "vertexMain_0", "main", "main_0");
@@ -145,7 +135,7 @@ gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, rast
     // Create the compiler and pipeline state
     compiler_desc := objc_new_defer_release(MTL4CompilerDescriptor);
 
-    error = null;
+    error: *NSError;
     compiler := MTLDevice.newCompilerWithDescriptor(mtl_device, compiler_desc, *error);
     if error != null || compiler == null {
         log_error_if_not_null(error, "newCompilerWithDescriptor");
@@ -205,13 +195,10 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     if compute_encoder == null then return;
 
     // Ensure bindless argument table is initialized
-    if global_argument_table == null {
-        init_bindless();
-    }
-
+    assert(argument_tables.compute != null);
     MTL4ComputeCommandEncoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
-    MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) data, 0);
-    MTL4ComputeCommandEncoder.setArgumentTable(compute_encoder, global_argument_table);
+    MTL4ArgumentTable.setAddress(argument_tables.compute, cast(MTLGPUAddress) data, 0);
+    MTL4ComputeCommandEncoder.setArgumentTable(compute_encoder, argument_tables.compute);
 
     // Get thread execution width and calculate threads per threadgroup
     max_threads := MTLComputePipelineState.maxTotalThreadsPerThreadgroup(pipeline.mtl_compute_pipeline);
@@ -261,12 +248,11 @@ get_pipeline :: (handle: Gpu_Pipeline) -> *Pipeline {
     return pool_get(live_pipelines, handle);
 }
 
+// Look up a function by a series of names, returning the first one found.
 get_function_from_library :: (library: *MTLLibrary, names: ..string) -> *MTLFunction {
     for name: names {
         fn := MTLLibrary.newFunctionWithName(library, to_temp_nsstring(name));
-        if fn != null {
-            return fn;
-        }
+        if fn != null return fn;
     }
     return null;
 }
@@ -320,6 +306,16 @@ return_if :: (cond: bool, message: string) #expand {
         log_error(message);
         `return;
     }
+}
+
+new_scoped_common_mtl_compile_options :: () -> *MTLCompileOptions #expand {
+    using opts := objc_new(MTLCompileOptions);
+    `defer release(opts);
+
+    // Create compile options with Metal 3.2 language version (required for MTL4)
+    setLanguageVersion(opts, ._3_2);
+    setEnableLogging(opts, ifx SGPU_ENABLE_SHADER_LOGGING then YES else NO);
+    return opts;
 }
 
 NSUTF8StringEncoding :: 4;

@@ -70,9 +70,13 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
         frame_completion_event.waitUntilSignaledValue(frame_completion_event, value_to_wait, U64_MAX);
     }
 
+
     // Get the next drawable from the layer
     current_drawable = CAMetalLayer.nextDrawable(swapchain_layer);
     if current_drawable == null {
+        drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
+        sleep_milliseconds(10);
+
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
 
@@ -135,6 +139,7 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
 
     value_to_signal := frame_index;
     MTL4CommandQueue.signalEvent(mtl4_queue, frame_completion_event, value_to_signal);
+    frame_index += 1;
 }
 
 #scope_module

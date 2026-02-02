@@ -9,6 +9,7 @@
     SLANG_COMPILER := true
 );
 
+SGPU_ENABLE_SHADER_LOGGING :: true; // @Perf
 
 Gpu_Pipeline :: #type,distinct s64;
 Gpu_Texture :: #type,distinct s64;
