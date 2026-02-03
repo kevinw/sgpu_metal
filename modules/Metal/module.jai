@@ -34,9 +34,13 @@ MTLClearColorMake :: (red: float64, green: float64, blue: float64, alpha: float6
 }
 
 init_metal :: () {
-
+    // TODO: do selector Structs instead of sel_registerName
 }
 
+
+
+
+#load "metalkit.jai";
 
 
 
@@ -936,8 +940,6 @@ MTLTextureSwizzleChannels :: struct #type_info_none {
 }
 
 MTLSharedTextureHandle :: struct #type_info_none {
-    #as using nssecurecoding: NSSecureCoding;
-
     device :: inline (self: *MTLSharedTextureHandle) -> *MTLDevice {
         sel := sel_registerName("device");
         return xx (cast((*MTLSharedTextureHandle, Selector) -> *MTLDevice #c_call)objc_msgSend)(self, sel);
@@ -10078,8 +10080,6 @@ MTLSharedEvent :: struct #type_info_none {
 }
 
 MTLSharedEventHandle :: struct #type_info_none {
-    #as using nssecurecoding: NSSecureCoding;
-
     label :: inline (self: *MTLSharedEventHandle) -> *NSString {
         sel := sel_registerName("label");
         return xx (cast((*MTLSharedEventHandle, Selector) -> *NSString #c_call)objc_msgSend)(self, sel);

@@ -30,12 +30,17 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     {
         using swapchain_layer;
 
+
         setDevice(swapchain_layer, mtl_device);
         setPixelFormat(swapchain_layer, .BGRA8Unorm);
         setFramebufferOnly(swapchain_layer, YES);
+        update_metal_layer_drawable_size(ns_window);
 
         // Get the initial drawable size
         drawable_size := drawableSize(swapchain_layer);
+        if drawable_size.width == 0 && drawable_size.height == 0 {
+            print("drawable_size: %", drawable_size);
+        }
         surface_width  = cast(u32) drawable_size.width;
         surface_height = cast(u32) drawable_size.height;
     }
@@ -49,10 +54,17 @@ gpu_swapchain_resize :: () {
     // Wait for any pending work to complete
     gpu_wait_idle();
 
+    update_metal_layer_drawable_size(xx native_window_handle);
+
     // Get the new drawable size
     drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
     surface_width  = cast(u32) drawable_size.width;
     surface_height = cast(u32) drawable_size.height;
+    print("after resize: % %", surface_width, surface_height);
+
+    ns_window := cast(*NSWindow) native_window_handle;
+    content_view := ns_window.contentView(ns_window);
+    log("%", subtree_description(content_view));
 
     // Clean up old swapchain texture views
     cleanup_swapchain_views();
@@ -70,15 +82,14 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
         frame_completion_event.waitUntilSignaledValue(frame_completion_event, value_to_wait, U64_MAX);
     }
 
-
     // Get the next drawable from the layer
     current_drawable = CAMetalLayer.nextDrawable(swapchain_layer);
     if current_drawable == null {
-        drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
+        log_error("Failed to get next drawable from CAMetalLayer.");
         sleep_milliseconds(10);
-
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
+    log("Acquired drawable: %", current_drawable);
 
     // TODO: gpu_swapchain_aquire doesn't specify the 0th MAIN queue, but we're adding the CAMetalLayer's residencySet
     // here to it. Might need to add a queue argument to gpu_swaphchain_acquire?
@@ -99,6 +110,7 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
     // Get the drawable's texture
     drawable_texture := CAMetalDrawable.texture(current_drawable);
     if drawable_texture == null {
+        log_error("Drawable has no texture.");
         return .SUCCESS, 0;
     }
 
@@ -120,7 +132,7 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     end_current_render_encoder(cmd_info);
 
     // End the command buffer recording
-    MTL4CommandBuffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
+    cmd_info.mtl4_cmd_buffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
 
     // Metal 4 presentation flow:
     // 1. Wait for drawable to be ready
@@ -129,12 +141,16 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     // 4. Present drawable
 
     using queue;
-    MTL4CommandQueue.waitForDrawable(mtl4_queue, current_drawable);
-    MTL4CommandQueue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
-    MTL4CommandQueue.signalDrawable(mtl4_queue, current_drawable);
+    mtl4_queue.waitForDrawable(mtl4_queue, current_drawable);
+    log("Committing command buffer and presenting drawable %", current_drawable);
+    mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
+    mtl4_queue.signalDrawable(mtl4_queue, current_drawable);
     if current_drawable != null {
-        CAMetalDrawable.present(current_drawable);
+        current_drawable.present(current_drawable);
+        log("Presented drawable %", current_drawable);
         current_drawable = null;
+    } else {
+        log_error("current_drawable was null before presenting.");
     }
 
     value_to_signal := frame_index;
@@ -222,24 +238,34 @@ cleanup_swapchain_views :: () {
         pool_remove(*live_textures, it.texture_handle);
     }
     array_reset(*swapchain_textures);
-    current_swapchain_view = 0;
+    current_swapchain_view = NULL_HANDLE;
 }
 
 ns_window_get_metal_layer :: (window: *NSWindow) -> *CAMetalLayer {
-    ns_view := NSWindow.contentView(window);
-    if !ns_view {
+    content_view := NSWindow.contentView(window);
+    if !content_view {
+        log_error("window has no contentView");
         return null;
     }
 
-    layer := NSView.layer(ns_view);
+    log("Window's contentView: %", content_view);
+    log("Window's contentView hierarchy:\n%", subtree_description(content_view));
+
+    layer := NSView.layer(content_view);
     if !layer {
+        log_error("window's contentView has no layer");
         return null;
     }
+
+    log("Layer of contentView: %", layer);
 
     // Check if the layer is a CAMetalLayer
     if !is_kind_of_class(cast(id) layer, objc_getClass("CAMetalLayer")) {
+        log_error("window's contentView's layer is not a CAMetalLayer, but a %", to_string(class_getName(object_getClass(cast(id) layer))));
         return null;
     }
+
+    log("Layer is a CAMetalLayer, as expected.");
 
     return cast(*CAMetalLayer) layer;
 }
@@ -251,9 +277,29 @@ is_kind_of_class :: (obj: id, class: Class) -> bool {
     return func(obj, sel, class) == YES;
 }
 
+subtree_description :: (ns_view: *NSView) -> string {
+    sel := sel_registerName("_subtreeDescription");
+    func: (*NSView, Selector) -> *NSString #c_call;
+    func = xx objc_msgSend;
+    str := func(ns_view, sel);
+    return to_string(str);
+}
+
 shutdown_swapchain :: () {
     release_and_set_null(*frame_completion_event);
 }
+
+update_metal_layer_drawable_size :: (window: *NSWindow) {
+    sz := window.frame(window).size;
+    width := sz.width;
+    height := sz.height;
+
+    r := NSRect.{ .{0, 0}, .{ xx width, xx height }};
+    r = window.convertRectToBacking(window, .{.{0, 0}, .{xx width, xx height}});
+    layer := ns_window_get_metal_layer(window);
+    layer.setDrawableSize(layer, r.size);
+}
+
 
 frame_autorelease_pool: *NSAutoreleasePool;
 

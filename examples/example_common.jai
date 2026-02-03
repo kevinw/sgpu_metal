@@ -3,9 +3,21 @@ EXTRA_CHECKS :: true;
 #if EXTRA_CHECKS {
     Debug :: #import "Debug";
 
-    gpu_example_harness :: () #expand {
+    Example_Options :: struct {
+        max_frames: int;
+    }
+
+    gpu_example_harness :: () -> Example_Options #expand {
         Debug.init();
+
+        // Check for -singleframe argument for automated testing
+        args_ok, args, is_set := parse_arguments(struct { singleframe: bool; });
+        singleframe := args_ok && is_set.singleframe;
+        max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
+
         `defer exit_with_error_on_memory_leak();
+
+        return { max_frames=max_frames };
     }
 
     exit_with_error_on_memory_leak :: () {
@@ -38,3 +50,5 @@ EXTRA_CHECKS :: true;
     VISUALIZE_MEMORY_DEBUGGER=false,
     TEMP_ALLOCATOR_POISON_FREED_MEMORY=true,
 );
+
+#import "Command_Line";

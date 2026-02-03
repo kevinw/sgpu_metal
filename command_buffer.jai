@@ -390,18 +390,20 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
         return .ERROR_INVALID_BUFFER;
     }
 
+    render_enc := cmd_info.current_render_encoder;
+
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
     if pipeline == null || pipeline.mtl_render_pipeline == null {
         log_error("gpu_draw_indexed_instanced: pipeline is null or pipeline.mtl_render_pipeline is null");
         return .ERROR_INVALID_PIPELINE;
     }
 
-    // Set argument table with buffer addresses
-    if global_argument_table != null {
-        MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) vertex_data, 0);
-        MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) pixel_data, 1);
-        MTL4RenderCommandEncoder.setArgumentTable(cmd_info.current_render_encoder, global_argument_table, cast(MTLRenderStages)(MTLRenderStage.Vertex | MTLRenderStage.Fragment));
-    }
+    // Set argument tables with buffer addresses
+    argument_tables.vertex.setAddress(argument_tables.vertex, gpuAddress=cast(MTLGPUAddress) vertex_data, bindingIndex=0);
+    render_enc.setArgumentTable(render_enc, argument_tables.vertex, cast(MTLRenderStages)(MTLRenderStage.Vertex));
+
+    argument_tables.fragment.setAddress(argument_tables.fragment, gpuAddress=cast(MTLGPUAddress) pixel_data, bindingIndex=0);
+    render_enc.setArgumentTable(render_enc, argument_tables.fragment, cast(MTLRenderStages)(MTLRenderStage.Fragment));
 
     if index_size != 4 && index_size != 2 then return .ERROR_INVALID_VERTEX_INDEX_SIZE;
 

@@ -1,16 +1,13 @@
 WRITE_SHADER_OUTPUT :: true;
 
 main :: () {
-    gpu_example_harness();
-
-    // Check for -singleframe argument for automated testing
-    args_ok, args, is_set := parse_arguments(struct { singleframe: bool; });
-    singleframe := args_ok && is_set.singleframe;
-    max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
+    opts := gpu_example_harness();
 
     result := gpu_init();
     assert(result == .SUCCESS);
     defer gpu_shutdown();
+
+    #import "Objective_C"; pool := objc_new(NSAutoreleasePool); defer release(pool);
 
     window := create_native_window(1280, 720, "03_hello_square");
 
@@ -62,7 +59,6 @@ main :: () {
     defer gpu_free_arena(gpu_arena);
 
     vertex_buffer, vertex_gpu := gpu_arena_alloc(*gpu_arena, [4] Vertex2D);
-    log("at init, actual vertices at %", vertex_gpu);
     vertex_buffer.* = .[
         .{ 0.5,   0.5 },
         .{ 0.5,  -0.5 },
@@ -79,7 +75,6 @@ main :: () {
     ];
 
     param_block, vertex_params_gpu := gpu_arena_alloc(*gpu_arena, [2] Gpu_Ptr);
-    log("at init, vertex param block at %", vertex_params_gpu);
     param_block.* = .[vertex_gpu, colors_gpu];
 
     index_buffer, index_gpu := gpu_arena_alloc(*gpu_arena, [6] u32);
@@ -95,7 +90,7 @@ main :: () {
 
     frame_count: s64 = 0;
     quit := false;
-    while !quit && frame_count < max_frames {
+    while !quit && (frame_count < opts.max_frames || opts.max_frames == 0) {
         gpu_push_frame();
 
         update_window_events();
@@ -136,6 +131,7 @@ main :: () {
         }
 
         gpu_submit_and_present(cmd_buff);
+        if frame_count == 0 gpu_dump_to_bitmap("03_hello_square.jpg");
         frame_count += 1;
     }
 
@@ -146,6 +142,5 @@ main :: () {
 #import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true);
 #load "example_common.jai";
 #import "Input";
-#import "Command_Line";
 #load "utils/window.jai";
 File :: #import "File";

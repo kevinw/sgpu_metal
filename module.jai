@@ -21,6 +21,8 @@ Gpu_Queue :: #type,distinct s64;
 Gpu_Command_Buffer :: #type,distinct s64;
 Gpu_Semaphore :: #type,distinct s64;
 
+NULL_HANDLE :: 0;
+
 Cull :: enum {
     NONE    :: 0x0;
     CCW     :: 0x1;
@@ -576,6 +578,7 @@ gpu_shutdown :: () {
 #load "sync.jai";
 #load "residency.jai";
 #if SLANG_COMPILER #load "shader_compiler.jai";
+#load "window_capture.jai";
 
 global_autorelease_pool: *NSAutoreleasePool;
 
