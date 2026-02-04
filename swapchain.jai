@@ -1,3 +1,5 @@
+USE_DEBUG_COMMIT :: false;
+
 #scope_export
 
 Native_Window_Type :: enum {
@@ -29,8 +31,6 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     // Configure the CAMetalLayer
     {
         using swapchain_layer;
-
-
         setDevice(swapchain_layer, mtl_device);
         setPixelFormat(swapchain_layer, .BGRA8Unorm);
         setFramebufferOnly(swapchain_layer, YES);
@@ -60,13 +60,6 @@ gpu_swapchain_resize :: () {
     drawable_size := CAMetalLayer.drawableSize(swapchain_layer);
     surface_width  = cast(u32) drawable_size.width;
     surface_height = cast(u32) drawable_size.height;
-    print("after resize: % %", surface_width, surface_height);
-
-    ns_window := cast(*NSWindow) native_window_handle;
-    content_view := ns_window.contentView(ns_window);
-    log("%", subtree_description(content_view));
-
-    // Clean up old swapchain texture views
     cleanup_swapchain_views();
 }
 
@@ -89,7 +82,6 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
         sleep_milliseconds(10);
         return .SUCCESS, 0;  // No drawable available (timeout or error)
     }
-    log("Acquired drawable: %", current_drawable);
 
     // TODO: gpu_swapchain_aquire doesn't specify the 0th MAIN queue, but we're adding the CAMetalLayer's residencySet
     // here to it. Might need to add a queue argument to gpu_swaphchain_acquire?
@@ -134,31 +126,47 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     // End the command buffer recording
     cmd_info.mtl4_cmd_buffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
 
-    // Metal 4 presentation flow:
-    // 1. Wait for drawable to be ready
-    // 2. Commit command buffer
-    // 3. Signal drawable completion
-    // 4. Present drawable
-
     using queue;
-    mtl4_queue.waitForDrawable(mtl4_queue, current_drawable);
-    log("Committing command buffer and presenting drawable %", current_drawable);
-    mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
-    mtl4_queue.signalDrawable(mtl4_queue, current_drawable);
-    if current_drawable != null {
-        current_drawable.present(current_drawable);
-        log("Presented drawable %", current_drawable);
-        current_drawable = null;
-    } else {
-        log_error("current_drawable was null before presenting.");
+    if current_drawable {
+        mtl4_queue.waitForDrawable(mtl4_queue, current_drawable);
     }
+    #if USE_DEBUG_COMMIT {
+        block_context = context;
+        block.isa = xx _NSConcreteGlobalBlock;
+        block.invoke = cast(*void)on_commit_feedback;
 
-    value_to_signal := frame_index;
-    MTL4CommandQueue.signalEvent(mtl4_queue, frame_completion_event, value_to_signal);
+        commit_options := objc_new(MTL4CommitOptions);
+        defer release(commit_options);
+        commit_options.addFeedbackHandler(commit_options, *block);
+
+        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1, options=commit_options);
+    } else {
+        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
+    }
+    if current_drawable {
+        mtl4_queue.signalDrawable(mtl4_queue, current_drawable);
+        current_drawable.present(current_drawable);
+    }
+    mtl4_queue.signalEvent(mtl4_queue, frame_completion_event, frame_index);
     frame_index += 1;
 }
 
 #scope_module
+
+on_commit_feedback :: (block: *Objective_C_Block_Basic, feedback: *MTL4CommitFeedback) #c_call {
+    push_context block_context {
+        error := feedback.error(feedback);
+        if error != null log_error("ERROR: %", nserror_to_string(error));
+        log("start time: %", feedback.GPUStartTime(feedback));
+        log("end time:   %", feedback.GPUEndTime(feedback));
+    }
+}
+
+// Boilerplate for getting an Objective-C block callback hooked up. See cmd_buf.addCompletedHandler above.
+block_desc: Objective_C_Block_Basic_Descriptor = .{ size = size_of(Objective_C_Block_Basic) };
+block: Objective_C_Block_Basic = .{ descriptor = *block_desc };
+block_context: #Context;
+
 
 native_window_handle: u64;
 native_window_type: Native_Window_Type;
@@ -248,8 +256,8 @@ ns_window_get_metal_layer :: (window: *NSWindow) -> *CAMetalLayer {
         return null;
     }
 
-    log("Window's contentView: %", content_view);
-    log("Window's contentView hierarchy:\n%", subtree_description(content_view));
+    // log("Window's contentView: %", content_view);
+    // log("Window's contentView hierarchy:\n%", subtree_description(content_view));
 
     layer := NSView.layer(content_view);
     if !layer {
@@ -257,15 +265,13 @@ ns_window_get_metal_layer :: (window: *NSWindow) -> *CAMetalLayer {
         return null;
     }
 
-    log("Layer of contentView: %", layer);
+    // log("Layer of contentView: %", layer);
 
     // Check if the layer is a CAMetalLayer
     if !is_kind_of_class(cast(id) layer, objc_getClass("CAMetalLayer")) {
         log_error("window's contentView's layer is not a CAMetalLayer, but a %", to_string(class_getName(object_getClass(cast(id) layer))));
         return null;
     }
-
-    log("Layer is a CAMetalLayer, as expected.");
 
     return cast(*CAMetalLayer) layer;
 }

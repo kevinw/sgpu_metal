@@ -19,4 +19,16 @@
     "label": "03_hello_square",
     "command": "./run_example.sh 03_hello_square",
   },
+  {
+    "label": "03_hello_square_sdl",
+    "command": "./run_example.sh 03_hello_square_sdl",
+  },
+  {
+    "label": "from_scratch",
+    "command": "./run_example.sh from_scratch",
+  },
+  {
+    "label": "jai_window metal example",
+    "command": "cd modules/Metal/examples && jai -quiet jai_window.jai +Autorun",
+  },
 ]

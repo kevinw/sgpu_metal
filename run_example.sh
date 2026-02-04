@@ -12,4 +12,4 @@ export MTL_DEBUG_LAYER=1
 export MTL_LOG_LEVEL=MTLLogLevelDebug
 export MTL_LOG_BUFFER_SIZE=2048
 
-cd examples &&  jai -quiet $name.jai && leaks --quiet --atExit -- ./$name
+cd examples &&  jai -import_dir ../modules -quiet $name.jai && leaks --quiet --atExit -- ./$name

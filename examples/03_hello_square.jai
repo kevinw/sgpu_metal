@@ -9,7 +9,7 @@ main :: () {
 
     #import "Objective_C"; pool := objc_new(NSAutoreleasePool); defer release(pool);
 
-    window := create_native_window(1280, 720, "03_hello_square");
+    window := create_window(1280, 720, "03_hello_square");
 
     window_type: Native_Window_Type;
     #if      OS == .WINDOWS then window_type = .WIN32;
@@ -17,12 +17,12 @@ main :: () {
     else #if OS == .MACOS   then window_type = .COCOA;
     else assert(false, "Unsupported OS");
 
-    gpu_init_swapchain(window, window_type);
+    gpu_init_swapchain(cast(u64)window, window_type);
     defer gpu_destroy_swapchain();
 
     main_queue := gpu_get_queue(.MAIN, 0);
 
-    #if 0 {
+    #if 1 {
         success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
         defer free(vertex_spv);
         success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
@@ -43,7 +43,7 @@ main :: () {
         blend_state = *blend_state,
     };
     depth_desc := Gpu_Depth_Stencil_Desc.{
-        depth_test = .NEVER,
+        depth_test = .ALWAYS,
         depth_mode = .NONE,
     };
 
@@ -121,11 +121,9 @@ main :: () {
             gpu_begin_render_pass(cmd_buff, render_desc);
             gpu_set_depth_stencil_state(cmd_buff, depth_desc);
 
-            res := gpu_set_pipeline(cmd_buff, graphics_pipeline);
-            assert(res == .SUCCESS);
+            gpu_set_pipeline(cmd_buff, graphics_pipeline);
 
-            res = gpu_draw_indexed_instanced(cmd_buff, vertex_params_gpu, pixel_gpu, index_gpu, 6, 1);
-            assert(res == .SUCCESS);
+            gpu_draw_indexed_instanced(cmd_buff, vertex_params_gpu, pixel_gpu, index_gpu, 6, 1);
 
             gpu_end_render_pass(cmd_buff);
         }
@@ -141,6 +139,6 @@ main :: () {
 
 #import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true);
 #load "example_common.jai";
+#import "Window_Creation";
 #import "Input";
-#load "utils/window.jai";
 File :: #import "File";

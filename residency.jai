@@ -16,7 +16,9 @@ init_residency :: () {
 
     error: *NSError = null;
     global_residency_set = MTLDevice.newResidencySetWithDescriptor(mtl_device, desc, *error);
-    assert(error == null);
+    if log_error_if_not_null(error) {
+        assert(false);
+    }
     assert(global_residency_set != null);
 }
 

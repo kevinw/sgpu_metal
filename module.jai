@@ -540,9 +540,7 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
     remember_allocator();
     requested_optional_features = optional_features;
 
-    #if RENDER_CAPTURE {
-        gpu_capture_init();
-    }
+    #if RENDER_CAPTURE gpu_capture_init();
 
     global_autorelease_pool = objc_new(NSAutoreleasePool);
 
@@ -577,13 +575,8 @@ gpu_shutdown :: () {
 #load "swapchain.jai";
 #load "sync.jai";
 #load "residency.jai";
-#if SLANG_COMPILER #load "shader_compiler.jai";
 #load "window_capture.jai";
-
-global_autorelease_pool: *NSAutoreleasePool;
-
-// we remember the allocator passed into gpu_init and ensure all cpu allocations occur using that allocator.
-cpu_allocator: Allocator;
+#if SLANG_COMPILER #load "shader_compiler.jai";
 
 Optional_Extension :: enum {
     DESCRIPTOR_BUFFER :: 0;
@@ -595,17 +588,15 @@ Optional_Extension_Info :: struct {
     supported: bool;
 }
 
-optional_extensions: [#run enum_highest_value(Optional_Extension) + 1] Optional_Extension_Info;
-
 is_optional_ext_supported :: (ext: Optional_Extension) -> bool {
     return optional_extensions[ext].supported;
 }
 
+global_autorelease_pool: *NSAutoreleasePool;
+cpu_allocator: Allocator; // we remember the allocator passed into gpu_init and ensure all cpu allocations occur using that allocator.
+optional_extensions: [#run enum_highest_value(Optional_Extension) + 1] Optional_Extension_Info;
 requested_optional_features: Gpu_Optional_Features;
-
 mtl_device: *MTLDevice;
-
-supports_descriptor_buffers: bool;
 
 MAX_BUFFERS  :: 5;
 MAX_IMAGES   :: 5;
@@ -621,8 +612,8 @@ MAX_ATTACHMENTS :: 16;
 
 #scope_module
 
-#import,dir "./modules/Metal";
 #import "Objective_C";
+#import "Metal";
 #import "Basic";
 #import "String";
 #import "Math";
@@ -679,6 +670,12 @@ release_and_set_null :: (p: **$T/NSObject) {
     }
 }
 
+to_temp_nsstring :: (str: string) -> *NSString #expand {
+    result := NSString.initWithString(objc_alloc(NSString), str);
+    `defer release(result);
+    return result;
+}
+
 objc_new_defer_release :: ($type: Type) -> *type #expand {
     obj := objc_new(type);
     `defer release(obj);
@@ -698,4 +695,11 @@ log_error_if_not_null :: (error: *NSError, description: string = "") -> bool {
     }
 
     return true;
+}
+
+nserror_to_string :: (nsError: *NSError) -> string {
+    // @Leak ?
+    error_string := NSError.localizedDescription(nsError);
+    error_string_utf8 := NSString.UTF8String(error_string);
+    return to_string(error_string_utf8);
 }

@@ -1,5 +1,3 @@
-LOG_ALL_ALLOCATIONS :: false;
-
 Gpu_Ptr :: #type,distinct u64;
 
 Memory_Type :: enum {
@@ -58,7 +56,6 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
 
     // Get the GPU address
     gpu_ptr := cast(Gpu_Ptr) mtl_buffer.gpuAddress(mtl_buffer);
-    if LOG_ALL_ALLOCATIONS log("mtl_buffer % gpu_ptr %", mtl_buffer, gpu_ptr);
     if gpu_ptr == 0 {
         // Failed to get GPU address - this shouldn't happen on modern Metal
         // Release the buffer (Metal uses reference counting, but we created it)

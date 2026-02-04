@@ -1,4 +1,3 @@
-#scope_export
 
 gpu_get_queue :: (queue_type: Gpu_Queue_Type, queue_index: u32) -> Gpu_Queue {
     for queues {
@@ -174,10 +173,6 @@ gpu_queue_wait_idle :: (queue_handle: Gpu_Queue) {
     }
 }
 
-// =====================
-// Render Pass Commands
-// =====================
-
 gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -> Gpu_Result {
     cmd_info := get_cmd_info(cmd);
     if cmd_info == null then return .ERROR_INVALID_BUFFER;
@@ -200,26 +195,23 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
         view := get_texture_view(it.view);
         if view == null return .ERROR_INVALID_TEXTURE;
 
-        texture := get_texture(view.texture);
-        if texture != null {
-            render_width = texture.desc.dimensions[0];
-            render_height = texture.desc.dimensions[1];
+        tex := get_texture(view.texture);
+        if tex != null {
+            render_width = tex.desc.dimensions[0];
+            render_height = tex.desc.dimensions[1];
         }
 
-        color_attachment := MTLRenderPassColorAttachmentDescriptorArray.objectAtIndexedSubscript(color_attachments, it_index.(NSUInteger));
-
-        MTLRenderPassColorAttachmentDescriptor.setTexture(color_attachment, view.mtl_texture);
-        MTLRenderPassColorAttachmentDescriptor.setLoadAction(color_attachment, load_op_to_mtl(it.load_op));
-        MTLRenderPassColorAttachmentDescriptor.setStoreAction(color_attachment, store_op_to_mtl(it.store_op));
-
+        using color_attachment := MTLRenderPassColorAttachmentDescriptorArray.objectAtIndexedSubscript(color_attachments, it_index.(NSUInteger));
+        setTexture(color_attachment, view.mtl_texture);
+        setLoadAction(color_attachment, load_op_to_mtl(it.load_op));
+        setStoreAction(color_attachment, store_op_to_mtl(it.store_op));
         if it.load_op == .CLEAR {
-            clear_color := MTLClearColor.{
-                red = it.clear_color._float[0].(float64),
+            setClearColor(color_attachment, {
+                red   = it.clear_color._float[0].(float64),
                 green = it.clear_color._float[1].(float64),
-                blue = it.clear_color._float[2].(float64),
+                blue  = it.clear_color._float[2].(float64),
                 alpha = it.clear_color._float[3].(float64),
-            };
-            MTLRenderPassColorAttachmentDescriptor.setClearColor(color_attachment, clear_color);
+            });
         }
     }
 
@@ -257,12 +249,15 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     render_encoder := MTL4CommandBuffer.renderCommandEncoderWithDescriptor(cmd_info.mtl4_cmd_buffer, pass_desc);
 
     if render_encoder == null {
+        log_error("Could not create render command encoder");
         return .FATAL_ERROR_UNKNOWN;
     }
 
     cmd_info.current_render_encoder = render_encoder;
-    cmd_info.render_width = render_width;
-    cmd_info.render_height = render_height;
+    //cmd_info.render_width = render_width;
+    //cmd_info.render_height = render_height;
+
+    // TODO: are these needed for a new render encoder?
 
     // Set default viewport and scissor
     render_encoder.setViewport(render_encoder, {
@@ -271,9 +266,7 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
         znear = 0, zfar = 1,
     });
 
-    render_encoder.setScissorRect(render_encoder, {
-        x = 0, y = 0, width = render_width.(NSUInteger), height = render_height.(NSUInteger),
-    });
+    render_encoder.setScissorRect(render_encoder, { 0, 0, render_width.(NSUInteger), render_height.(NSUInteger), });
 
     return .SUCCESS;
 }
@@ -365,22 +358,45 @@ gpu_set_pipeline :: (cmd: Gpu_Command_Buffer, pipeline_handle: Gpu_Pipeline) -> 
 }
 
 gpu_draw_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data: Gpu_Ptr, vertex_count: u32, instance_count: u32) -> Gpu_Result {
-    cmd_info := get_cmd_info(cmd);
+    using cmd_info := get_cmd_info(cmd);
     if cmd_info == null || cmd_info.current_render_encoder == null then return .ERROR_INVALID_PIPELINE /* TODO probably the wrong error */;
 
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
     if pipeline == null || pipeline.mtl_render_pipeline == null then return .ERROR_INVALID_PIPELINE /* TODO probably the wrong error */;
 
-    // Set argument table with buffer addresses
-    if global_argument_table != null {
-        MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) vertex_data, 0);
-        MTL4ArgumentTable.setAddress(global_argument_table, cast(MTLGPUAddress) pixel_data, 1);
-        MTL4RenderCommandEncoder.setArgumentTable(cmd_info.current_render_encoder, global_argument_table, cast(MTLRenderStages)(MTLRenderStage.Vertex | MTLRenderStage.Fragment));
-    }
+    // TODO: we might need more than one indirect buffer per queue per frame, if we're submitting lots of command buffers.
+    // each frame/queue pair could draw from a pair of unused indirect buffers, and return them when the frame is over.
+    indirect_buffer := get_indirect_params_buffer(get_queue(cmd_info.queue), vertex_data, pixel_data);
 
-    MTL4RenderCommandEncoder.drawPrimitives(cmd_info.current_render_encoder, .Triangle, 0, vertex_count.(NSUInteger), instance_count.(NSUInteger));
+    // Set argument table with buffer addresses
+    argument_tables.vertex.setAddress(argument_tables.vertex, indirect_buffer.gpuAddress(indirect_buffer), 0);
+    current_render_encoder.setArgumentTable(current_render_encoder, argument_tables.vertex, cast(MTLRenderStages)(MTLRenderStage.Vertex | .Fragment));
+
+    current_render_encoder.drawPrimitives(current_render_encoder, .Triangle, 0, vertex_count.(NSUInteger), instance_count.(NSUInteger));
 
     return .SUCCESS;
+}
+
+Indirect_Params :: struct {
+    vertex_params: *void;
+    fragment_params: *void;
+}
+
+get_indirect_params_buffer :: (using queue: *Queue, vertex_data: Gpu_Ptr, fragment_data: Gpu_Ptr) -> *MTLBuffer {
+    index := frame_index % MAX_FRAMES_IN_FLIGHT;
+
+    buf := indirect_param_buffers[index];
+    if buf == null {
+        buf = mtl_device.newBufferWithLength(mtl_device, size_of(Indirect_Params), xx MTLResource.StorageModeShared);
+        buf.setLabel(buf, to_temp_nsstring(tprint("sgpu indirect params %", index)));
+        indirect_param_buffers[index] = buf;
+    }
+
+    cpu := cast(*Indirect_Params)buf.contents(buf);
+    cpu.vertex_params   = xx vertex_data;
+    cpu.fragment_params = xx fragment_data;
+
+    return buf;
 }
 
 gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data: Gpu_Ptr, index_data: Gpu_Ptr, index_count: u32, instance_count: u32, index_size: u32 = size_of(u32)) -> Gpu_Result {
@@ -390,7 +406,7 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
         return .ERROR_INVALID_BUFFER;
     }
 
-    render_enc := cmd_info.current_render_encoder;
+    using cmd_info;
 
     pipeline := pool_get(live_pipelines, cmd_info.current_pipeline);
     if pipeline == null || pipeline.mtl_render_pipeline == null {
@@ -398,12 +414,13 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
         return .ERROR_INVALID_PIPELINE;
     }
 
-    // Set argument tables with buffer addresses
-    argument_tables.vertex.setAddress(argument_tables.vertex, gpuAddress=cast(MTLGPUAddress) vertex_data, bindingIndex=0);
-    render_enc.setArgumentTable(render_enc, argument_tables.vertex, cast(MTLRenderStages)(MTLRenderStage.Vertex));
+    // TODO: we might need more than one indirect buffer per queue per frame, if we're submitting lots of command buffers.
+    // each frame/queue pair could draw from a pair of unused indirect buffers, and return them when the frame is over.
+    indirect_buffer := get_indirect_params_buffer(get_queue(cmd_info.queue), vertex_data, pixel_data);
 
-    argument_tables.fragment.setAddress(argument_tables.fragment, gpuAddress=cast(MTLGPUAddress) pixel_data, bindingIndex=0);
-    render_enc.setArgumentTable(render_enc, argument_tables.fragment, cast(MTLRenderStages)(MTLRenderStage.Fragment));
+    // Set argument table with buffer addresses
+    argument_tables.vertex.setAddress(argument_tables.vertex, indirect_buffer.gpuAddress(indirect_buffer), 0);
+    current_render_encoder.setArgumentTable(current_render_encoder, argument_tables.vertex, cast(MTLRenderStages)(MTLRenderStage.Vertex | .Fragment));
 
     if index_size != 4 && index_size != 2 then return .ERROR_INVALID_VERTEX_INDEX_SIZE;
 
@@ -413,9 +430,6 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
     // The index_data is already a Gpu_Ptr (GPU address), so we use it directly
     index_buffer_address := cast(MTLGPUAddress) index_data;
     index_buffer_length := (index_count * index_size).(NSUInteger);
-
-    //log("index_count % - index_type % - index_buffer_address % - index_buffer_length % - instance_count %",
-        //index_count, index_type, index_buffer_address, index_buffer_length, instance_count);
 
     MTL4RenderCommandEncoder.drawIndexedPrimitives(
         cmd_info.current_render_encoder,
@@ -442,6 +456,7 @@ Queue :: struct {
     index_in_type: u32;
     type: Gpu_Queue_Type;
     command_allocators: [MAX_FRAMES_IN_FLIGHT]*MTL4CommandAllocator;
+    indirect_param_buffers: [MAX_FRAMES_IN_FLIGHT]*MTLBuffer;
 }
 
 
@@ -528,8 +543,6 @@ Command_Buffer_Info :: struct {
     current_compute_encoder: *MTL4ComputeCommandEncoder;
     current_render_encoder: *MTL4RenderCommandEncoder;
     current_pipeline: Gpu_Pipeline;
-    render_width: u32;
-    render_height: u32;
 }
 
 get_cmd_info :: (cmd: Gpu_Command_Buffer) -> *Command_Buffer_Info {
@@ -614,9 +627,3 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
 
 live_command_buffers: [..] Command_Buffer_Info;
 queues: [MAX_COMPUTE_QUEUES + MAX_TRANSFER_QUEUES + 1] Queue;
-
-to_temp_nsstring :: (str: string) -> *NSString #expand {
-    result := NSString.initWithString(objc_alloc(NSString), str);
-    `defer release(result);
-    return result;
-}

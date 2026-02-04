@@ -13,11 +13,14 @@ struct ParamsBlock {
     device simd_float4* colors;
 };
 
-vertex RasterizerData vertexMain(uint vertexID [[vertex_id]], constant ParamsBlock* paramsBlock [[buffer(0)]]) {
-    RasterizerData out;
-    out.position.xy = paramsBlock->positions[vertexID].xy;
-    out.position.zw = float2(0.0, 1.0);
-    out.color = paramsBlock->colors[vertexID];
-    out.color.w = 1.0;
-    return out;
+struct VertexParams {
+    device ParamsBlock* paramsBlock;
+};
+
+vertex RasterizerData vertexMain(uint vertexID [[vertex_id]], constant VertexParams* vertexParams [[buffer(0)]]) {
+    auto paramsBlock = vertexParams->paramsBlock;
+    return {
+        .position = float4(paramsBlock->positions[vertexID].xy, 0, 1),
+        .color = paramsBlock->colors[vertexID],
+    };
 }
