@@ -15,10 +15,6 @@ struct ParamsBlock {
 
 vertex RasterizerData vertexMain(uint vertexID [[vertex_id]], constant ParamsBlock* paramsBlock [[buffer(0)]]) {
     RasterizerData out;
-    if (vertexID == 0) {
-        os_log_default.log_info("blah: %p", paramsBlock);
-    }
-
     out.position.xy = paramsBlock->positions[vertexID].xy;
     out.position.zw = float2(0.0, 1.0);
     out.color = paramsBlock->colors[vertexID];
