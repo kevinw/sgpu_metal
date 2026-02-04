@@ -66,12 +66,15 @@ main :: () {
         .{ -0.5, +0.5 },
     ];
 
-    vertex_colors, colors_gpu := gpu_arena_alloc(*gpu_arena, [12] float);
+    V3 :: struct { x: float; y: float; z: float; }
+    V4 :: struct { x: float; y: float; z: float; w: float; }
+
+    vertex_colors, colors_gpu := gpu_arena_alloc(*gpu_arena, [4] V4);
     vertex_colors.* = .[
-        1., 0., 0.,
-        0., 1., 0.,
-        0., 0., 1.,
-        1., 1., 1.,
+        {1, 0, 0, 1},
+        {0, 1, 0, 1},
+        {0, 0, 1, 1},
+        {1, 1, 1, 1},
     ];
 
     param_block, vertex_params_gpu := gpu_arena_alloc(*gpu_arena, [2] Gpu_Ptr);

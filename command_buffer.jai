@@ -525,6 +525,9 @@ shutdown_queues :: () {
         for allocator: it.command_allocators {
             release(allocator);
         }
+        for indirect_buffer: it.indirect_param_buffers {
+            if indirect_buffer release(indirect_buffer);
+        }
         it.* = {};
     }
 }

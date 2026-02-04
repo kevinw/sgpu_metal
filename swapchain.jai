@@ -162,11 +162,10 @@ on_commit_feedback :: (block: *Objective_C_Block_Basic, feedback: *MTL4CommitFee
     }
 }
 
-// Boilerplate for getting an Objective-C block callback hooked up. See cmd_buf.addCompletedHandler above.
+// Boilerplate for getting an Objective-C block callback hooked up
 block_desc: Objective_C_Block_Basic_Descriptor = .{ size = size_of(Objective_C_Block_Basic) };
 block: Objective_C_Block_Basic = .{ descriptor = *block_desc };
 block_context: #Context;
-
 
 native_window_handle: u64;
 native_window_type: Native_Window_Type;

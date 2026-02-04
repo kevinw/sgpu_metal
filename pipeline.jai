@@ -13,18 +13,12 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
 
     // Get the entry point function from the library
     // Try "computeMain" first (our convention), then fall back to "main"
-    mtl_function := MTLLibrary.newFunctionWithName(mtl_library, to_temp_nsstring("computeMain"));
-    defer if mtl_function then release(mtl_function);
-
-    // If computeMain not found, try "main"
+    mtl_function := get_function_from_library(mtl_library, "computeMain", "main", "main_0");
     if mtl_function == null {
-        mtl_function = MTLLibrary.newFunctionWithName(mtl_library, to_temp_nsstring("main"));
-    }
-
-    if mtl_function == null {
-        log_error("Failed to find 'main' function in Metal shader");
+        log_error("Failed to find compute main function in Metal shader");
         return 0;
     }
+    defer release(mtl_function);
 
     // Create the compute pipeline state
     mtl_pipeline := MTLDevice.newComputePipelineStateWithFunction(mtl_device, mtl_function, *error);
@@ -194,10 +188,13 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
     compute_encoder := ensure_compute_encoder(cmd_info);
     if compute_encoder == null then return;
 
+    compute_encoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
+
+    indirect_buffer := get_indirect_params_buffer(get_queue(cmd_info.queue), data, 0);
+
     // Ensure bindless argument table is initialized
     assert(argument_tables.compute != null);
-    MTL4ComputeCommandEncoder.setComputePipelineState(compute_encoder, pipeline.mtl_compute_pipeline);
-    MTL4ArgumentTable.setAddress(argument_tables.compute, cast(MTLGPUAddress) data, 0);
+    MTL4ArgumentTable.setAddress(argument_tables.compute, indirect_buffer.gpuAddress(indirect_buffer), 0);
     MTL4ComputeCommandEncoder.setArgumentTable(compute_encoder, argument_tables.compute);
 
     // Get thread execution width and calculate threads per threadgroup
