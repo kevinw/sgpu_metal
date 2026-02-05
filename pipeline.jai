@@ -1,10 +1,18 @@
 #scope_export
 
-gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
+gpu_create_meshlets_pipeline :: (meshlets_spirv: [] u8, pixel_spirv: [] u8, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+    return 0;
+}
+
+gpu_draw_meshlets :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) -> Gpu_Result {
+    return .SUCCESS;
+}
+
+gpu_create_compute_pipeline :: (metal_source: []u8) -> Gpu_Pipeline {
     compile_options := new_scoped_common_mtl_compile_options();
 
     error: *NSError;
-    mtl_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(metal_source), compile_options, *error);
+    mtl_library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(cast(string)metal_source), compile_options, *error);
     defer if mtl_library release(mtl_library);
     if log_error_if_not_null(error) || mtl_library == null {
         log_error("Failed to create Metal library");
@@ -38,15 +46,15 @@ gpu_create_compute_pipeline :: (metal_source: string) -> Gpu_Pipeline {
     });
 }
 
-gpu_create_graphics_pipeline :: (vertex_metal: string, pixel_metal: string, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+gpu_create_graphics_pipeline :: (vertex_metal: []u8, pixel_metal: []u8, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
     auto_release_temp();
 
     // Create library from vertex shader Metal source
     compile_options := new_scoped_common_mtl_compile_options();
 
-    new_scoped_library :: (source: string, debug_name: string) -> *MTLLibrary #expand {
+    new_scoped_library :: (source: []u8, debug_name: string) -> *MTLLibrary #expand {
         error: *NSError;
-        library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(source), compile_options, *error);
+        library := MTLDevice.newLibraryWithSource(mtl_device, to_temp_nsstring(cast(string)source), compile_options, *error);
         if log_error_if_not_null(error) {
             log_error("Failed to compile %.", debug_name);
             `return 0;

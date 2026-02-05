@@ -24,14 +24,14 @@ main :: () {
 
     #if 1 {
         success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
-        defer free(vertex_spv);
+        defer array_free(vertex_spv);
         success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
-        defer free(pixel_spv);
+        defer array_free(pixel_spv);
     } else {
         vertex_spv, ok := File.read_entire_file("shaders/hello_square_vs.metal"); assert(ok);
-        defer free(vertex_spv);
+        defer array_free(vertex_spv);
         pixel_spv, ok= := File.read_entire_file("shaders/hello_square_ps.metal"); assert(ok);
-        defer free(pixel_spv);
+        defer array_free(pixel_spv);
     }
 
     blend_state: Gpu_Blend_Desc;

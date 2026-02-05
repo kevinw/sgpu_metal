@@ -1,6 +1,6 @@
 #scope_export
 
-compile_shader :: (shader_path: string, write_output: bool = false, debug_symbols: bool = false) -> bool, string {
+compile_shader :: (shader_path: string, write_output: bool = false, debug_symbols: bool = false) -> bool, []u8 {
     if !global_session then create_session();
 
     auto_release_temp();
@@ -52,14 +52,14 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
 
     session: *slang.ISession;
     slang.IGlobalSession_createSession(global_session, *session_desc, *session);
-    if !session then return false, "";
+    if !session then return false, {};
     defer slang.ISlangUnknown_release(session);
 
     diagnostic_blob: *slang.IBlob = null;
 
     slang_module := slang.ISession_loadModule(session, temp_c_string(shader_path), *diagnostic_blob);
     log_blob_if_nonnull(*diagnostic_blob);
-    if !slang_module then return false, "";
+    if !slang_module then return false, {};
 
     entry_points: [..] *slang.IEntryPoint;
     entry_points.allocator = temp;
@@ -82,19 +82,19 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
     composed_program: *slang.IComponentType;
     slang.ISession_createCompositeComponentType(session, components.data, components.count, *composed_program, *diagnostic_blob);
     log_blob_if_nonnull(*diagnostic_blob);
-    if !composed_program then return false, "";
+    if !composed_program then return false, {};
     defer slang.ISlangUnknown_release(composed_program);
 
     linked_program: *slang.IComponentType;
     link_result := slang.IComponentType_link(composed_program, *linked_program, *diagnostic_blob);
     log_blob_if_nonnull(*diagnostic_blob);
-    if !slang.SLANG_SUCCEEDED(link_result) || !linked_program then return false, "";
+    if !slang.SLANG_SUCCEEDED(link_result) || !linked_program then return false, {};
     defer slang.ISlangUnknown_release(linked_program);
 
     metal_code: *slang.IBlob = null;
     slang.IComponentType_getEntryPointCode(linked_program, 0, 0, *metal_code, *diagnostic_blob);
     log_blob_if_nonnull(*diagnostic_blob);
-    if !metal_code then return false, "";
+    if !metal_code then return false, {};
     defer slang.ISlangUnknown_release(metal_code);
 
     // Get the Metal source as a string
@@ -112,7 +112,7 @@ compile_shader :: (shader_path: string, write_output: bool = false, debug_symbol
         File.write_entire_file(output_path, result);
     }
 
-    return true, result;
+    return true, { result.count, result.data };
 }
 
 #scope_module
