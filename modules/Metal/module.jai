@@ -40,10 +40,6 @@ init_metal :: () {
 
 
 
-#load "metalkit.jai";
-
-
-
 MTLResourceCPUCacheModeShift :: 0;
 MTLResourceCPUCacheModeMask :: 0xf << MTLResourceCPUCacheModeShift;
 
@@ -940,6 +936,8 @@ MTLTextureSwizzleChannels :: struct #type_info_none {
 }
 
 MTLSharedTextureHandle :: struct #type_info_none {
+    #as using nssecurecoding: NSSecureCoding;
+
     device :: inline (self: *MTLSharedTextureHandle) -> *MTLDevice {
         sel := sel_registerName("device");
         return xx (cast((*MTLSharedTextureHandle, Selector) -> *MTLDevice #c_call)objc_msgSend)(self, sel);
@@ -1894,7 +1892,6 @@ MTLFunctionDescriptor :: struct #type_info_none {
 
 MTLIntersectionFunctionDescriptor :: struct #type_info_none {
     #as using mtlfunctiondescriptor: MTLFunctionDescriptor;
-    #as using nscopying:             NSCopying;
 }
 
 MTLAutoreleasedRenderPipelineReflection :: *MTLRenderPipelineReflection;
@@ -10080,6 +10077,8 @@ MTLSharedEvent :: struct #type_info_none {
 }
 
 MTLSharedEventHandle :: struct #type_info_none {
+    #as using nssecurecoding: NSSecureCoding;
+
     label :: inline (self: *MTLSharedEventHandle) -> *NSString {
         sel := sel_registerName("label");
         return xx (cast((*MTLSharedEventHandle, Selector) -> *NSString #c_call)objc_msgSend)(self, sel);

@@ -1,4 +1,5 @@
 EXTRA_CHECKS :: true;
+SHOW_MEMORY_LEAKS :: true;
 
 #if EXTRA_CHECKS {
     Debug :: #import "Debug";
@@ -15,7 +16,7 @@ EXTRA_CHECKS :: true;
         singleframe := args_ok && is_set.singleframe;
         max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
 
-        `defer exit_with_error_on_memory_leak();
+        #if SHOW_MEMORY_LEAKS `defer exit_with_error_on_memory_leak();
 
         return { max_frames=max_frames };
     }
@@ -44,11 +45,11 @@ EXTRA_CHECKS :: true;
     example_debug_harness :: () #expand {}
 }
 
-
+// TODO: let the user specify these module parameters to basic, and use #if #exists ?
 #import "Basic"()(
     MEMORY_DEBUGGER=EXTRA_CHECKS,
     VISUALIZE_MEMORY_DEBUGGER=false,
-    TEMP_ALLOCATOR_POISON_FREED_MEMORY=true,
+    TEMP_ALLOCATOR_POISON_FREED_MEMORY=EXTRA_CHECKS,
 );
 
 #import "Command_Line";

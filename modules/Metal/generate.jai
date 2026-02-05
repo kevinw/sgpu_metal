@@ -1,12 +1,17 @@
 /*
+Generates Metal 4 bindings.
 
-Generates Metal 4 bindings. WIP: Requires modification to Bindings_Generator for now.
+This is a WIP--it requires modification to Bindings_Generator for now. See
+Bindings_Generator_objective_c.patch in this directory.
 
+The main work remaining for the Bindings_Generator patch is to get it to output
+Selector structs; right now the generated bindings call sel_registerName at
+every call site.
 */
 
 OMIT_TYPE_INFO_FOR_METAL_TYPES :: true; // Info: This struct is generating a lot of Type_Info data (10096 bytes). If you don't need Type_Info for this struct's members, you can use #type_info_none to eliminate almost all this data.
-INCLUDE_METALKIT :: true;
-RUN_AT_COMPILE_TIME :: false;
+INCLUDE_METALKIT :: false;
+RUN_AT_COMPILE_TIME :: false; // It's faster to just compile the bindings generator to native code and run it, than to go through the Jai interpreter.
 
 #if RUN_AT_COMPILE_TIME {
     #run {
@@ -87,9 +92,11 @@ END);
     if ok log("Metal bindings generated from headers at %", metal_path);
     else return false;
 
-    ok = generate_bindings(make_opts(metalkit_input_source_files, metalkit_module_header, "MetalKit.framework/", "CALayer.h"), "metalkit.jai");
-    if ok log("MetalKit bindings generated from headers at %", metalkit_path);
-    else return false;
+    #if INCLUDE_METALKIT {
+        ok = generate_bindings(make_opts(metalkit_input_source_files, metalkit_module_header, "MetalKit.framework/", "CALayer.h"), "metalkit.jai");
+        if ok log("MetalKit bindings generated from headers at %", metalkit_path);
+        else return false;
+    }
 
     return ok;
 }
@@ -97,43 +104,21 @@ END);
 metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_Visit_Result {
     // Types to omit - either provided by Objective_C module or defined in header
     TYPES_TO_OMIT :: string.[
-        "NSObject",
-        "NSString",
-        "NSArray",
-        "NSDictionary",
-        "NSError",
-        "NSBundle",
-        "NSURL",
-        "NSData",
-        "NSNumber",
-        "NSUInteger",
-        "NSInteger",
-        "NSSecureCoding",
-        "NSCopying",
-        "NSFastEnumeration",
         "IOSurfaceRef",
         "Block",
         "task_id_token_t",
-        "BOOL",
-        "YES",
-        "NO",
+
+        // prohibit Metal types from inheriting protocols which cause overlapping #using
+        // errors. TODO: fix the logic for parent protocols to be better in the Bindings_Generator
         "id",
-        "ID",   // Capitalized version
-        "Class",
-        "SEL",
-        "Selector",
-        "nil",
-        "Nil",
-        "isa",  // Member of NSObject, conflicts when using #as using
-        "CALayer",
-        "CALayoutManager",
+        "nsobject",
+        "nscopying",
+        "isa",
+        "ID",
     ];
 
-    if !parent_decl {
-        if array_find(TYPES_TO_OMIT, decl.output_name) {
-            decl.decl_flags |= .OMIT_FROM_OUTPUT;
-            return .STOP;
-        }
+    if array_find(TYPES_TO_OMIT, decl.output_name) {
+        decl.decl_flags |= .OMIT_FROM_OUTPUT;
     }
 
     do_objc_logic :: (decl: *Declaration) -> bool {
@@ -167,14 +152,6 @@ metal_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_
                 fn.output_name = convert_objc_fn_name(fn.name);
             }
             array_add(*fns, {h, fn});
-        }
-    }
-
-    if parent_decl && parent_decl.kind == .STRUCT && do_objc_logic(parent_decl) {
-        // The bindings generator doesn't handle NSObject hierarchies at the moment.
-        // Skip them for now, since all we use all MTL objects by pointer anyways.
-        if decl.output_name == "nsobject" || decl.output_name == "isa" || decl.output_name == "ID" || decl.output_name == "nscoding" || decl.output_name == "nsview" {
-            parent_decl.(*Struct).flags |= .OMIT_PARENTS;
         }
     }
 
@@ -264,6 +241,7 @@ MTLClearColorMake :: (red: float64, green: float64, blue: float64, alpha: float6
 
 init_metal :: () {
     // TODO: do selector Structs instead of sel_registerName
+    // here is where we will initialize the struct.
 }
 
 END;

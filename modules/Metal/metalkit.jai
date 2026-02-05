@@ -49,8 +49,6 @@ kCALayerM :: enum CACornerMask {
 }
 
 CAAction :: struct {
-    #as using ID: id;
-
     runActionForKey :: inline (self: *CAAction, event: *NSString, anObject: id, dict: *NSDictionary(id, id)) -> void {
         sel := sel_registerName("runActionForKey:object:arguments:");
         return xx (cast((*CAAction, Selector, *NSString, id, *NSDictionary(id, id)) -> void #c_call)objc_msgSend)(self, sel, event, anObject, dict);
@@ -89,6 +87,8 @@ CALayerDelegate :: struct #type_info_none {
 @abstract View for rendering metal content
 */
 MTKView :: struct #type_info_none {
+    #as using nsview:          NSView;
+    #as using nscoding:        NSCoding;
     #as using calayerdelegate: CALayerDelegate;
 
     /*!
