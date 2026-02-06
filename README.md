@@ -14,6 +14,8 @@ You can compile and run each example individually:
 ./run_example 03_hello_square
 ```
 
+(The fourth mesh shader example currently doesn't work--Slang's metal output for mesh shaders seems underbaked, and mesh shaders may require writing some metal. TBD.)
+
 Or to run all examples in a "single frame" test with memory leak checking:
 
 ```
