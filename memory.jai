@@ -24,12 +24,12 @@ gpu_log_memory_leaks :: () -> (has_leaks: bool) {
     return has_leaks;
 }
 
-gpu_malloc :: ($type: Type, memory_type: Memory_Type = .DEFAULT) -> (mapped: *type, gpu: Gpu_Ptr) {
-    cpu_ptr, gpu_ptr := gpu_malloc(size_of(type), memory_type);
+gpu_malloc :: ($type: Type, memory_type: Memory_Type = .DEFAULT, label := "") -> (mapped: *type, gpu: Gpu_Ptr) {
+    cpu_ptr, gpu_ptr := gpu_malloc(size_of(type), memory_type, label);
     return cpu_ptr.(*type), gpu_ptr;
 }
 
-gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void, gpu: Gpu_Ptr) {
+gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT, label := "") -> (mapped: *void, gpu: Gpu_Ptr) {
     // Determine Metal storage mode based on memory type
     options: MTLResourceOptions;
     if #complete memory_type == {
@@ -50,6 +50,10 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
     if mtl_buffer == null {
         log_error("Could not create MTLBuffer with size % and options %", size, options);
         return null, 0;
+    }
+
+    if label {
+        mtl_buffer.setLabel(mtl_buffer, to_temp_nsstring(label));
     }
 
     add_to_residency(mtl_buffer);
