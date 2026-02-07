@@ -657,6 +657,12 @@ return_if_error :: (result: Gpu_Result) #expand {
     }
 }
 
+return_if_null :: (ptr: *$T) #expand {
+    if ptr == null {
+        `return;
+    }
+}
+
 debug_assert :: (arg: bool, message := "", args: ..Any, loc := #caller_location) #no_debug #expand {
     #if DEBUG_ASSERTS {
         assert(arg, message, args, loc);

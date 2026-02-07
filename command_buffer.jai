@@ -13,30 +13,28 @@ gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Comm
     queue := get_queue(queue_handle);
     if queue == null return .FATAL_ERROR_UNKNOWN, 0;
 
-    mtl4_allocator := queue.command_allocators[frame_index % MAX_FRAMES_IN_FLIGHT];
-    assert(mtl4_allocator != null);
-    mtl4_allocator.reset(mtl4_allocator);
+    allocator := queue.command_allocators[frame_index % MAX_FRAMES_IN_FLIGHT];
+    assert(allocator != null);
+    allocator.reset(allocator);
 
-    mtl4_cmd_buffer := MTLDevice.newCommandBuffer(mtl_device);
-    if mtl4_cmd_buffer == null {
+    cmd_buffer := get_available_command_buffer(queue);
+    if cmd_buffer == null {
         log_error("Failed to create command buffer");
         return .ERROR_COMMAND_BUFFER_LIMIT_EXCEEDED, 0;
     }
 
     // Begin the command buffer with the allocator
-    MTL4CommandBuffer.beginCommandBufferWithAllocator(mtl4_cmd_buffer, mtl4_allocator);
+    cmd_buffer.beginCommandBufferWithAllocator(cmd_buffer, allocator);
 
     // Store the command buffer info
-    cmd_info: Command_Buffer_Info = {
-        mtl4_cmd_buffer = mtl4_cmd_buffer,
-        queue = queue_handle,
-    };
+    cmd_info: Command_Buffer_Info = { cmd_buffer = cmd_buffer, queue = queue_handle };
 
     // Find an empty slot in live command buffers
     found_slot := false;
     slot_index: s64 = -1;
     for * live_command_buffers {
-        if it.mtl4_cmd_buffer == null {
+        if it.cmd_buffer == null {
+            assert(it.current_compute_encoder == null && it.current_render_encoder == null);
             it.* = cmd_info;
             slot_index = it_index;
             found_slot = true;
@@ -88,30 +86,29 @@ gpu_barrier :: (cmd: Gpu_Command_Buffer, src_stage: Stage, dst_stage: Stage) {
     using cmd_info := get_cmd_info(cmd);
     if cmd_info == null then return;
 
-    // In Metal 4, barriers are handled by ending and starting new encoders
+    // TODO!
+
     if current_compute_encoder != null  end_current_compute_encoder(cmd_info);
     if current_render_encoder != null   end_current_render_encoder(cmd_info);
 }
 
 gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[], waits: [] Gpu_Timeline_Pair = .[]) {
     cmd_info := get_cmd_info(cmd_buff);
-    if cmd_info == null then return;
+    return_if_null(cmd_info);
 
     queue := get_queue(cmd_info.queue);
-    if queue == null then return;
+    return_if_null(queue);
 
     // End any active encoder
     end_current_compute_encoder(cmd_info);
     end_current_render_encoder(cmd_info);
 
     // End the command buffer recording
-    MTL4CommandBuffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
+    MTL4CommandBuffer.endCommandBuffer(cmd_info.cmd_buffer);
 
     // Submit via MTL4 command queue
-    MTL4CommandQueue.commit(queue.mtl4_queue, *cmd_info.mtl4_cmd_buffer, 1);
-
-    // Mark slot as available (don't clear mtl4_cmd_buffer yet - we need it for wait_idle)
-    // The command buffer is now owned by Metal until completion
+    MTL4CommandQueue.commit(queue.mtl4_queue, *cmd_info.cmd_buffer, 1);
+    free_command_buffer(queue, cmd_info);
 }
 
 gpu_wait_idle :: () {
@@ -130,18 +127,11 @@ gpu_wait_idle :: () {
         event.waitUntilSignaledValue(event, signal_value, milliseconds=U64_MAX);
     }
 
-    // Clear all command buffer slots and release allocators
     for * live_command_buffers {
         using it;
-
-        release_and_set_null(*mtl4_cmd_buffer);
-
-        if current_compute_encoder log("WARNING: current_compute_encoder is not null, but we called gpu_wait_idle");
-        if current_render_encoder  log("WARNING: current_render_encoder is not null, but we called gpu_wait_idle");
-
-        // TODO: @Leak?
-        current_compute_encoder = null;
-        current_render_encoder = null;
+        assert(it.current_compute_encoder == null);
+        assert(it.current_render_encoder == null);
+        assert(it.cmd_buffer == null);
     }
 }
 
@@ -150,26 +140,15 @@ gpu_queue_wait_idle :: (queue_handle: Gpu_Queue) {
     if queue == null || queue.mtl4_queue == null then return;
 
     // Create a shared event for synchronization
-    event := MTLDevice.newSharedEvent(mtl_device);
-    if event == null then return;
-    defer release(event);
+    {
+        event := MTLDevice.newSharedEvent(mtl_device);
+        assert(event != null);
+        defer release(event);
 
-    // Signal the event after all pending work on this queue
-    signal_value: u64 = 1;
-    MTL4CommandQueue.signalEvent(queue.mtl4_queue, event, signal_value);
-
-    // Spin-wait for the event to be signaled
-    while MTLSharedEvent.signaledValue(event) < signal_value {
-        // Busy wait - could add a small sleep here for efficiency
-    }
-
-    // Clear command buffer slots for this queue and release allocators
-    for * live_command_buffers {
-        if it.mtl4_cmd_buffer != null && it.queue == queue_handle {
-            release_and_set_null(it.mtl4_cmd_buffer);
-            it.current_compute_encoder = null;
-            it.current_render_encoder = null;
-        }
+        // Signal the event after all pending work on this queue
+        signal_value: u64 = 1;
+        MTL4CommandQueue.signalEvent(queue.mtl4_queue, event, signal_value);
+        MTLSharedEvent.waitUntilSignaledValue(event, signal_value, milliseconds=U64_MAX);
     }
 }
 
@@ -246,7 +225,7 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     }
 
     // Create the render command encoder
-    render_encoder := MTL4CommandBuffer.renderCommandEncoderWithDescriptor(cmd_info.mtl4_cmd_buffer, pass_desc);
+    render_encoder := MTL4CommandBuffer.renderCommandEncoderWithDescriptor(cmd_info.cmd_buffer, pass_desc);
 
     if render_encoder == null {
         log_error("Could not create render command encoder");
@@ -451,15 +430,6 @@ Gpu_Timeline_Pair :: struct {
 
 #scope_module
 
-Queue :: struct {
-    mtl4_queue: *MTL4CommandQueue;
-    index_in_type: u32;
-    type: Gpu_Queue_Type;
-    command_allocators: [MAX_FRAMES_IN_FLIGHT]*MTL4CommandAllocator;
-    indirect_param_buffers: [MAX_FRAMES_IN_FLIGHT]*MTLBuffer;
-}
-
-
 init_queues :: () {
     auto_release_temp();
 
@@ -523,46 +493,34 @@ shutdown_queues :: () {
     for * queues {
         release_and_set_null(*it.mtl4_queue);
         for allocator: it.command_allocators {
-            release(allocator);
+            if allocator release(allocator);
         }
         for indirect_buffer: it.indirect_param_buffers {
             if indirect_buffer release(indirect_buffer);
         }
+        for cmd_buf: it.free_command_buffers {
+            if cmd_buf release(cmd_buf);
+        }
+        array_free(it.free_command_buffers);
         it.* = {};
     }
 }
 
 get_queue :: (queue_handle: Gpu_Queue) -> *Queue {
     queue_index := queue_handle - 1;
-    if queue_index < 0 || queue_index >= queues.count {
-        return null;
-    }
+    if queue_index < 0 || queue_index >= queues.count return null;
     return *queues[queue_index];
-}
-
-Command_Buffer_Info :: struct {
-    mtl4_cmd_buffer: *MTL4CommandBuffer;
-    queue: Gpu_Queue;
-    current_compute_encoder: *MTL4ComputeCommandEncoder;
-    current_render_encoder: *MTL4RenderCommandEncoder;
-    current_pipeline: Gpu_Pipeline;
 }
 
 get_cmd_info :: (cmd: Gpu_Command_Buffer) -> *Command_Buffer_Info {
     index := cast(s64) cmd - 1;
-    if index < 0 || index >= live_command_buffers.count {
-        return null;
-    }
+    if index < 0 || index >= live_command_buffers.count return null;
     return *live_command_buffers[index];
 }
 
 ensure_compute_encoder :: (using cmd_info: *Command_Buffer_Info) -> *MTL4ComputeCommandEncoder {
     assert(cmd_info != null);
-
-    if current_compute_encoder == null {
-        current_compute_encoder = mtl4_cmd_buffer.computeCommandEncoder(mtl4_cmd_buffer);
-    }
-
+    current_compute_encoder = cmd_buffer.computeCommandEncoder(cmd_buffer);
     return current_compute_encoder;
 }
 
@@ -626,6 +584,43 @@ stencil_op_to_mtl :: (op: Stencil_Op) -> MTLStencilOperation {
         case .DECREMENT_AND_WARP;  return .DecrementWrap;
     }
     return .Keep;
+}
+
+Command_Buffer_Info :: struct {
+    cmd_buffer: *MTL4CommandBuffer;
+    queue: Gpu_Queue;
+    current_compute_encoder: *MTL4ComputeCommandEncoder;
+    current_render_encoder: *MTL4RenderCommandEncoder;
+    current_pipeline: Gpu_Pipeline;
+}
+
+get_available_command_buffer :: (using queue: *Queue) -> *MTL4CommandBuffer {
+    if free_command_buffers.count > 0 {
+        cmd_buf := free_command_buffers[free_command_buffers.count - 1];
+        free_command_buffers.count -= 1;
+        return cmd_buf;
+    }
+
+    return mtl_device.newCommandBuffer(mtl_device);
+}
+
+free_command_buffer :: (using queue: *Queue, cmd_info: *Command_Buffer_Info) {
+    assert(cmd_info.cmd_buffer != null);
+    assert(cmd_info.current_render_encoder == null, "free_command_buffer had active render encoder: cmd_info = %", cmd_info);
+    array_add(*free_command_buffers, cmd_info.cmd_buffer);
+    if free_command_buffers.count > 100 {
+        log(tprint("WARNING: Free command buffer count is high: %", free_command_buffers.count));
+    }
+    cmd_info.cmd_buffer = null;
+}
+
+Queue :: struct {
+    mtl4_queue: *MTL4CommandQueue;
+    index_in_type: u32;
+    type: Gpu_Queue_Type;
+    command_allocators: [MAX_FRAMES_IN_FLIGHT]*MTL4CommandAllocator;
+    indirect_param_buffers: [MAX_FRAMES_IN_FLIGHT]*MTLBuffer;
+    free_command_buffers: [..]*MTL4CommandBuffer;
 }
 
 live_command_buffers: [..] Command_Buffer_Info;

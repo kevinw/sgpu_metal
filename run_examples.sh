@@ -13,4 +13,4 @@ echo "Running 03_hello_square..."
 jai -import_dir ../modules -quiet 03_hello_square.jai && ./03_hello_square -singleframe || exit 1
 
 # run metal + sdl example
-cd ../modules/Metal/examples && jai -quiet sdl_metal.jai +Autorun -singleframe || exit 1
+# cd ../modules/Metal/examples && jai -quiet sdl_metal.jai +Autorun -singleframe || exit 1

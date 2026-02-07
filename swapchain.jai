@@ -38,9 +38,10 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
 
         // Get the initial drawable size
         drawable_size := drawableSize(swapchain_layer);
-        if drawable_size.width == 0 && drawable_size.height == 0 {
-            print("drawable_size: %", drawable_size);
-        }
+
+        if drawable_size.width == 0 && drawable_size.height == 0
+            log_error("ZERO drawable_size: %", drawable_size);
+
         surface_width  = cast(u32) drawable_size.width;
         surface_height = cast(u32) drawable_size.height;
     }
@@ -122,32 +123,37 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
     // End any active encoder (render or compute)
     end_current_compute_encoder(cmd_info);
     end_current_render_encoder(cmd_info);
+    assert(cmd_info.current_render_encoder == null);
 
     // End the command buffer recording
-    cmd_info.mtl4_cmd_buffer.endCommandBuffer(cmd_info.mtl4_cmd_buffer);
+    cmd_info.cmd_buffer.endCommandBuffer(cmd_info.cmd_buffer);
 
     using queue;
     if current_drawable {
         mtl4_queue.waitForDrawable(mtl4_queue, current_drawable);
     }
+
     #if USE_DEBUG_COMMIT {
         block_context = context;
         block.isa = xx _NSConcreteGlobalBlock;
         block.invoke = cast(*void)on_commit_feedback;
 
-        commit_options := objc_new(MTL4CommitOptions);
-        defer release(commit_options);
+        commit_options := objc_scope_new(MTL4CommitOptions);
         commit_options.addFeedbackHandler(commit_options, *block);
 
-        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1, options=commit_options);
+        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.cmd_buffer, count=1, options=commit_options);
     } else {
-        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.mtl4_cmd_buffer, count=1);
+        mtl4_queue.commit(mtl4_queue, commandBuffers=*cmd_info.cmd_buffer, count=1);
     }
+
     if current_drawable {
         mtl4_queue.signalDrawable(mtl4_queue, current_drawable);
         current_drawable.present(current_drawable);
     }
+
     mtl4_queue.signalEvent(mtl4_queue, frame_completion_event, frame_index);
+    assert(cmd_info.current_render_encoder == null);
+    free_command_buffer(queue, cmd_info);
     frame_index += 1;
 }
 
