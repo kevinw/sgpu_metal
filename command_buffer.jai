@@ -366,11 +366,7 @@ get_indirect_params_buffer :: (using queue: *Queue, vertex_data: Gpu_Ptr, fragme
     index := frame_index % MAX_FRAMES_IN_FLIGHT;
 
     buf := indirect_param_buffers[index];
-    if buf == null {
-        buf = mtl_device.newBufferWithLength(mtl_device, size_of(Indirect_Params), xx MTLResource.StorageModeShared);
-        buf.setLabel(buf, to_temp_nsstring(tprint("sgpu indirect params %", index)));
-        indirect_param_buffers[index] = buf;
-    }
+    assert(buf != null);
 
     cpu := cast(*Indirect_Params)buf.contents(buf);
     cpu.vertex_params   = xx vertex_data;
@@ -458,36 +454,36 @@ init_queues :: () {
 
     queue_index := 0;
 
+    init_queue :: (queue: *Queue, type: Gpu_Queue_Type, index_in_type: u32) {
+        queue.type = type;
+        queue.index_in_type = index_in_type;
+        queue.mtl4_queue = create_command_queue(tprint("%", type));
+        for i: 0..MAX_FRAMES_IN_FLIGHT-1 {
+            queue.command_allocators[i] = create_command_allocator(tprint("%_alloc_%", type, i));
+            buf := mtl_device.newBufferWithLength(mtl_device, size_of(Indirect_Params), xx MTLResource.StorageModeShared);
+            buf.setLabel(buf, to_temp_nsstring(tprint("sgpu indirect params (%) %", type, i)));
+            add_to_residency(buf);
+            queue.indirect_param_buffers[i] = buf;
+        }
+        attach_residency_to_queue(queue.mtl4_queue);
+    }
+
     // MAIN queue
     {
-        using queue := *queues[queue_index]; queue_index += 1;
-        type = .MAIN;
-        index_in_type = 0;
-        mtl4_queue = create_command_queue("MAIN");
-        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("MAIN_alloc_%", i));
-        attach_residency_to_queue(mtl4_queue);
+        queue := *queues[queue_index]; queue_index += 1;
+        init_queue(queue, .MAIN, 0);
     }
 
     // COMPUTE queues (4 of them, but Metal doesn't really distinguish - they all go to same HW)
     for i: 0..MAX_COMPUTE_QUEUES-1 {
-        using queue := *queues[queue_index]; queue_index += 1;
-
-        type = .COMPUTE;
-        index_in_type = i.(u32);
-        mtl4_queue = create_command_queue(tprint("COMPUTE_%", i));
-        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("COMPUTE_alloc_%", i));
-        attach_residency_to_queue(mtl4_queue);
+        queue := *queues[queue_index]; queue_index += 1;
+        init_queue(queue, .COMPUTE, i.(u32));
     }
 
     // TRANSFER queues (2 of them)
     for i: 0..MAX_TRANSFER_QUEUES-1 {
-        using queue := *queues[queue_index]; queue_index += 1;
-
-        type = .TRANSFER;
-        index_in_type = i.(u32);
-        mtl4_queue = create_command_queue(tprint("TRANSFER_%", i));
-        for i: 0..MAX_FRAMES_IN_FLIGHT-1 command_allocators[i] = create_command_allocator(tprint("TRANSFER_alloc_%", i));
-        attach_residency_to_queue(mtl4_queue);
+        queue := *queues[queue_index]; queue_index += 1;
+        init_queue(queue, .TRANSFER, i.(u32));
     }
 }
 
