@@ -23,9 +23,9 @@ main :: () {
     main_queue := gpu_get_queue(.MAIN, 0);
 
     #if 1 {
-        success, vertex_spv := compile_shader("shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
+        success, vertex_spv := compile_shader("../shaders/hello_square_vs.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
         defer array_free(vertex_spv);
-        success=, pixel_spv := compile_shader("shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
+        success=, pixel_spv := compile_shader("../shaders/hello_square_ps.slang", write_output = WRITE_SHADER_OUTPUT); assert(success); assert(success);
         defer array_free(pixel_spv);
     } else {
         vertex_spv, ok := File.read_entire_file("shaders/hello_square_vs.metal"); assert(ok);
@@ -92,6 +92,8 @@ main :: () {
     gpu_commit_residency();
 
     frame_count: s64 = 0;
+    capture_started := false;
+    capture_done := false;
     quit := false;
     while !quit && (frame_count < opts.max_frames || opts.max_frames == 0) {
         gpu_push_frame();
@@ -110,6 +112,16 @@ main :: () {
 
         result=, cmd_buff := gpu_start_command_recording(main_queue);
         assert(result == .SUCCESS);
+
+        if opts.capture_frame && !capture_started {
+            capture_result := gpu_capture_start_in_xcode(main_queue);
+            if capture_result != .SUCCESS {
+                log_error("gpu_capture_start_in_xcode failed with result %", capture_result);
+            } else {
+                capture_started = true;
+            }
+        }
+
         {
             render_desc := Gpu_Render_Pass_Desc.{
                 color_targets = .[
@@ -132,6 +144,10 @@ main :: () {
         }
 
         gpu_submit_and_present(cmd_buff);
+        if capture_started && !capture_done {
+            gpu_capture_stop(open = true);
+            capture_done = true;
+        }
         if frame_count == 0 gpu_dump_to_bitmap("03_hello_square.jpg");
         frame_count += 1;
     }
@@ -140,7 +156,7 @@ main :: () {
     print("OK!\n");
 }
 
-#import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true);
+#import,file "../module.jai"(VALIDATION = true, DEBUG_ASSERTS = true); // #import "sgpu" in your own code
 #load "example_common.jai";
 #import "Window_Creation";
 #import "Input";

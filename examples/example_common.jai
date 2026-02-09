@@ -6,19 +6,26 @@ SHOW_MEMORY_LEAKS :: true;
 
     Example_Options :: struct {
         max_frames: int;
+        capture_frame: bool;
     }
 
     gpu_example_harness :: () -> Example_Options #expand {
         Debug.init();
 
-        // Check for -singleframe argument for automated testing
-        args_ok, args, is_set := parse_arguments(struct { singleframe: bool; });
+        // Check for optional command-line arguments for automated testing.
+        // -singleframe: run a fixed small frame count.
+        // -captureframe: invoke one programmatic Metal capture in Xcode tools.
+        args_ok, args, is_set := parse_arguments(struct {
+            singleframe: bool;
+            captureframe: bool;
+        });
         singleframe := args_ok && is_set.singleframe;
+        capture_frame := args_ok && is_set.captureframe;
         max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
 
         #if SHOW_MEMORY_LEAKS `defer exit_with_error_on_memory_leak();
 
-        return { max_frames=max_frames };
+        return { max_frames=max_frames, capture_frame=capture_frame };
     }
 
     exit_with_error_on_memory_leak :: () {

@@ -17,7 +17,7 @@ main :: () {
 
     // Compile Slang shader to Metal with MTL4 argument table bindless support
     // The Slang shader uses preprocessor directives to generate Metal-compatible code
-    success, compiled_shader := compile_shader("shaders/compute.slang"); assert(success, "Failed to compile shader");
+    success, compiled_shader := compile_shader("../shaders/compute.slang"); assert(success, "Failed to compile shader");
     defer if compiled_shader array_free(compiled_shader);
 
     pipeline := gpu_create_compute_pipeline(compiled_shader);
