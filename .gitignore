@@ -11,3 +11,4 @@ xcode/sgpu_metal/sgpu_metal.xcodeproj/project.xcworkspace/xcuserdata
 examples/03_hello_square
 *.generated.metal
 modules/Metal/examples/metalkit_test
+examples/libslang-compiler.0.2025.24.2.dylib
