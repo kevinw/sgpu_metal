@@ -5,8 +5,9 @@ SHOW_MEMORY_LEAKS :: true;
     Debug :: #import "Debug";
 
     Example_Options :: struct {
-        max_frames: int;
-        capture_frame: bool;
+        max_frames: int;        @"?Stop after the given number of frames (0 for infinite)."
+        capture_frame: bool;    @"?Invoke one programmatic Metal capture in Xcode tools."
+        dump_framebuffer: bool; @"?Dump the first frame's framebuffer to an image file."
     }
 
     gpu_example_harness :: () -> Example_Options #expand {
@@ -15,17 +16,12 @@ SHOW_MEMORY_LEAKS :: true;
         // Check for optional command-line arguments for automated testing.
         // -singleframe: run a fixed small frame count.
         // -captureframe: invoke one programmatic Metal capture in Xcode tools.
-        args_ok, args, is_set := parse_arguments(struct {
-            singleframe: bool;
-            captureframe: bool;
-        });
-        singleframe := args_ok && is_set.singleframe;
-        capture_frame := args_ok && is_set.captureframe;
-        max_frames := ifx singleframe then 5 else 0x7FFF_FFFF_FFFF_FFFF;
+        args_ok, args, is_set := parse_arguments(Example_Options);
+        if !args_ok exit(1);
 
         #if SHOW_MEMORY_LEAKS `defer exit_with_error_on_memory_leak();
 
-        return { max_frames=max_frames, capture_frame=capture_frame };
+        return args;
     }
 
     exit_with_error_on_memory_leak :: () {
