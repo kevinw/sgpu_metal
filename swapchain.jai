@@ -228,6 +228,10 @@ create_swapchain_texture_view :: (mtl_texture: *MTLTexture) -> Gpu_Texture_View 
         desc = texture_desc,
         mtl_texture = mtl_texture,
     });
+    if texture_handle == 0 {
+        log_error("create_swapchain_texture_view: live_textures pool exhausted (MAX_IMAGES=%)", MAX_IMAGES);
+        return 0;
+    }
 
     // Create texture view
     view_handle := pool_add(*live_texture_views, .{
@@ -241,6 +245,11 @@ create_swapchain_texture_view :: (mtl_texture: *MTLTexture) -> Gpu_Texture_View 
             layer_count = 1,
         },
     });
+    if view_handle == 0 {
+        log_error("create_swapchain_texture_view: live_texture_views pool exhausted");
+        pool_remove(*live_textures, texture_handle);
+        return 0;
+    }
 
     // Track this swapchain texture
     entry: Swapchain_Texture_Entry;

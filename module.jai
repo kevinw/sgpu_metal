@@ -598,9 +598,9 @@ optional_extensions: [#run enum_highest_value(Optional_Extension) + 1] Optional_
 requested_optional_features: Gpu_Optional_Features;
 mtl_device: *MTLDevice;
 
-MAX_BUFFERS  :: 5;
-MAX_IMAGES   :: 5;
-MAX_SAMPLERS :: 5;
+MAX_BUFFERS  :: 256;
+MAX_IMAGES   :: 1024;
+MAX_SAMPLERS :: 10;
 
 MAX_COMPUTE_QUEUES  :: 4;
 MAX_TRANSFER_QUEUES :: 2;

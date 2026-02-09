@@ -174,10 +174,11 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
         view := get_texture_view(it.view);
         if view == null return .ERROR_INVALID_TEXTURE;
 
-        tex := get_texture(view.texture);
-        if tex != null {
-            render_width = tex.desc.dimensions[0];
-            render_height = tex.desc.dimensions[1];
+        if view.mtl_texture != null {
+            // Use live Metal texture dimensions (swapchain-backed textures can change independently
+            // from cached descriptor metadata).
+            render_width = MTLTexture.width(view.mtl_texture).(u32);
+            render_height = MTLTexture.height(view.mtl_texture).(u32);
         }
 
         using color_attachment := MTLRenderPassColorAttachmentDescriptorArray.objectAtIndexedSubscript(color_attachments, it_index.(NSUInteger));
@@ -198,10 +199,10 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     if desc.depth_target.view != 0 {
         view := get_texture_view(desc.depth_target.view);
         if view != null {
-            texture := get_texture(view.texture);
-            if texture != null {
-                render_width = texture.desc.dimensions[0];
-                render_height = texture.desc.dimensions[1];
+            if view.mtl_texture != null {
+                // Keep viewport/scissor aligned to the actual depth attachment size.
+                render_width = MTLTexture.width(view.mtl_texture).(u32);
+                render_height = MTLTexture.height(view.mtl_texture).(u32);
             }
 
             depth_attachment := MTL4RenderPassDescriptor.depthAttachment(pass_desc);
@@ -398,7 +399,8 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
     indirect_buffer := get_indirect_params_buffer(get_queue(cmd_info.queue), vertex_data, pixel_data);
 
     // Set argument table with buffer addresses
-    argument_tables.vertex.setAddress(argument_tables.vertex, indirect_buffer.gpuAddress(indirect_buffer), 0);
+    indirect_gpu := indirect_buffer.gpuAddress(indirect_buffer);
+    argument_tables.vertex.setAddress(argument_tables.vertex, indirect_gpu, 0);
     current_render_encoder.setArgumentTable(current_render_encoder, argument_tables.vertex, cast(MTLRenderStages)(MTLRenderStage.Vertex | .Fragment));
 
     if index_size != 4 && index_size != 2 then return .ERROR_INVALID_VERTEX_INDEX_SIZE;
