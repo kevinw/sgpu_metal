@@ -49,6 +49,12 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
 
     // Create the frame completion event for synchronization
     frame_completion_event = mtl_device.newSharedEvent(mtl_device);
+    assert(frame_completion_event != null);
+    if frame_completion_event != null {
+        // Use 1-based frame completion values:
+        // frame N submission signals value N+1 when finished.
+        frame_completion_event.setSignaledValue(frame_completion_event, 0);
+    }
 }
 
 gpu_swapchain_resize :: () {
@@ -72,7 +78,7 @@ gpu_destroy_swapchain :: () {
 gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
     // Wait if the CPU is trying to submit more than MAX_FRAMES_IN_FLIGHT before the GPU can get to them.
     if frame_index >= MAX_FRAMES_IN_FLIGHT {
-        value_to_wait := frame_index - MAX_FRAMES_IN_FLIGHT;
+        value_to_wait := frame_index - MAX_FRAMES_IN_FLIGHT + 1;
         frame_completion_event.waitUntilSignaledValue(frame_completion_event, value_to_wait, U64_MAX);
     }
 
@@ -88,16 +94,16 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
     // here to it. Might need to add a queue argument to gpu_swaphchain_acquire?
     // Not sure how it fits into the sgpu API yet.
     {
-        queue := get_queue(gpu_get_queue(.MAIN, 0));
+        using queue := get_queue(gpu_get_queue(.MAIN, 0));
         if queue == null {
             log_error("gpu_swapchain_acquire: Failed to get main queue");
             return .FATAL_ERROR_UNKNOWN, 0;
         }
-        assert(queue.mtl4_queue != null);
+        assert(mtl4_queue != null);
 
         layer_residency_set := swapchain_layer.residencySet(swapchain_layer);
         assert(layer_residency_set != null);
-        queue.mtl4_queue.addResidencySet(queue.mtl4_queue, layer_residency_set);
+        mtl4_queue.addResidencySet(mtl4_queue, layer_residency_set);
     }
 
     // Get the drawable's texture
@@ -151,7 +157,8 @@ gpu_submit_and_present :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timelin
         current_drawable.present(current_drawable);
     }
 
-    mtl4_queue.signalEvent(mtl4_queue, frame_completion_event, frame_index);
+    // Signal completion for this frame as frame_index + 1 so waits can never target 0.
+    mtl4_queue.signalEvent(mtl4_queue, frame_completion_event, frame_index + 1);
     assert(cmd_info.current_render_encoder == null);
     free_command_buffer(queue, cmd_info);
     frame_index += 1;
