@@ -49,7 +49,7 @@ main :: () {
 
 
     for 0..COUNT-1 {
-        assert(buffer_cpu.*[it] == 1.0);
+        assert(buffer_cpu.*[it] == 1.0, "Expected the compute shader to set each buffer value to 1.0, but the %th value was %", it, buffer_cpu.*[it]);
     }
 
     print("OK!\n");
